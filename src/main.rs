@@ -10,19 +10,19 @@ struct App {
 
 impl API for App {
     async fn login(&mut self, _req: api::LoginRequest) -> Result<api::LoginResponse, api::Error> {
-        return Err(Error {
-            code: 200 as u16,
+        Err(Error {
+            code: 200_u16,
             message: "token".to_string(),
-        });
+        })
     }
     async fn login2(&mut self, _req: api::LoginRequest) -> Result<api::LoginResponse2, api::Error> {
-        return Ok(api::LoginResponse2 {
+        Ok(api::LoginResponse2 {
             user: User {
                 id: 1,
                 name: "name".to_string(),
             },
             token: "token".to_string(),
-        });
+        })
     }
 }
 
