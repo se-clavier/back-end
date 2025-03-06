@@ -1,5 +1,5 @@
-use api::{API, APICollection, Error, User};
-use axum::{Json, Router, extract::State, routing::post};
+use api::{APICollection, Error, User, API};
+use axum::{extract::State, routing::post, Json, Router};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -11,15 +11,16 @@ struct App {
 impl API for App {
     async fn login(&mut self, _req: api::LoginRequest) -> Result<api::LoginResponse, api::Error> {
         Err(Error {
-            code: 200_u16,
-            message: "token".to_string(),
+            code: 400_u16,
+            message: "bad request".to_string(),
         })
     }
-    async fn login2(&mut self, _req: api::LoginRequest) -> Result<api::LoginResponse2, api::Error> {
-        Ok(api::LoginResponse2 {
+    async fn register(&mut self, _req: api::RegisterRequest) -> Result<api::LoginResponse, Error> {
+        Ok(api::LoginResponse {
             user: User {
                 id: 1,
-                name: "name".to_string(),
+                name: "rnoob".to_string(),
+                roles: vec![api::Role::user],
             },
             token: "token".to_string(),
         })
