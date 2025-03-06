@@ -12,7 +12,7 @@ RUN make -C api prepare
 RUN make -C api src/lib.rs
 RUN cargo build --release
 
-FROM debian AS runtime
+FROM debian:12 AS runtime
 USER back-end
 EXPOSE 3000
 COPY --from=build target/release/back-end /back-end
