@@ -6,9 +6,9 @@ WORKDIR /opt/back-end
 
 # Clone the repository
 
-COPY Cargo.* .gitmodules ./
-COPY src src
-COPY .git .git
+COPY ./Cargo.* ./.gitmodules ./
+COPY ./src ./src
+COPY ./.git ./.git
 RUN git submodule update --init --recursive
 
 # Build the project
