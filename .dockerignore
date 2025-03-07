@@ -1,0 +1,4 @@
+/target
+/api/*
+/.github
+sonar-project.properties
