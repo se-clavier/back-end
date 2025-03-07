@@ -6,7 +6,9 @@ WORKDIR /opt/back-end
 
 # Clone the repository
 
-COPY . .
+COPY Cargo.* .gitmodules ./
+COPY src src
+COPY .git .git
 RUN git submodule update --init --recursive
 
 # Build the project
@@ -17,8 +19,9 @@ RUN cargo build --release
 
 # Create a new image with only the necessary files to run the application
 
-FROM debian:12 AS runtime
+FROM debian:bookworm AS runtime
+RUN groupadd -r back-end && useradd -r -g back-end back-end
 USER back-end
 EXPOSE 3000
-COPY --from=build target/release/back-end /back-end
+COPY --from=build /opt/back-end/target/release/back-end /back-end
 ENTRYPOINT [ "/back-end" ]
