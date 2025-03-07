@@ -1,5 +1,11 @@
 use api::{APICollection, Error, User, API};
-use axum::{extract::State, routing::post, Json, Router};
+use axum::{
+    extract::State,
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    routing::post,
+    Json, Router,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -30,8 +36,10 @@ impl API for App {
 async fn handler(
     State(mut app): State<App>,
     Json(body): Json<APICollection>,
-) -> Result<Json<impl Serialize>, Json<api::Error>> {
-    Ok(Json(app.handle(body).await.map_err(Json)?))
+) -> Result<Json<impl Serialize>, Response> {
+    Ok(Json(app.handle(body).await.map_err(|e| {
+        (StatusCode::from_u16(e.code).unwrap(), Json(e)).into_response()
+    })?))
 }
 
 #[tokio::main]
