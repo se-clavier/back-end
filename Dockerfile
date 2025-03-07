@@ -6,7 +6,7 @@ WORKDIR /opt/back-end
 
 # Clone the repository
 
-COPY ./Cargo.* ./.gitmodules ./
+COPY ./Cargo.toml ./Cargo.lock ./.gitmodules ./
 COPY ./src ./src
 COPY ./.git ./.git
 RUN git submodule update --init --recursive
