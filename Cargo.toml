@@ -4,3 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+serde = { version = "1.0.218", features = ["derive"] }
+api = {path = "./api"}
+tokio = { version = "1.43.0", features = ["full"] }
+axum = { version = "0.8.1", features = ["macros"] }
