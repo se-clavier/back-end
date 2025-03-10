@@ -32,6 +32,22 @@ impl API for App {
             token: "token".to_string(),
         })
     }
+    async fn test_auth_echo(
+        &mut self,
+        req: api::TestAuthEchoRequest,
+    ) -> Result<api::TestAuthEchoResponse, Error> {
+        Ok(api::TestAuthEchoResponse { data: req.data })
+    }
+    async fn validate(&self, role: api::Role, token: &str) -> Result<(), Error> {
+        if token == "token" && matches!(role, api::Role::user) {
+            Ok(())
+        } else {
+            Err(Error {
+                code: 401_u16,
+                message: "unauthorized".to_string(),
+            })
+        }
+    }
 }
 
 async fn handler(
