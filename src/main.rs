@@ -6,6 +6,8 @@ use axum::{
     routing::post,
     Json, Router,
 };
+mod val;
+use val::validate;
 use serde::{Deserialize, Serialize};
 use tower_http::cors::CorsLayer;
 use std::collections::HashMap;
