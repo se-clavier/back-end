@@ -1,4 +1,4 @@
-use api::{APICollection, Error, User, API};
+use api::{APICollection, Error, API};
 use axum::{
     extract::State,
     http::StatusCode,
@@ -7,8 +7,8 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
-use tower_http::cors::CorsLayer;
 use std::collections::HashMap;
+use tower_http::cors::CorsLayer;
 
 #[derive(Serialize, Deserialize, Clone)]
 struct App {
@@ -17,20 +17,46 @@ struct App {
 
 impl API for App {
     async fn login(&mut self, _req: api::LoginRequest) -> Result<api::LoginResponse, api::Error> {
-        Err(Error {
-            code: 400_u16,
-            message: "bad request".to_string(),
-        })
+        todo!()
     }
     async fn register(&mut self, _req: api::RegisterRequest) -> Result<api::LoginResponse, Error> {
-        Ok(api::LoginResponse {
-            user: User {
-                id: 1,
-                name: "rnoob".to_string(),
-                roles: vec![api::Role::user],
-            },
-            token: "token".to_string(),
-        })
+        todo!()
+    }
+
+    async fn validate(&self, _role: api::Role, _auth: api::Auth) -> Result<api::Auth, Error> {
+        todo!()
+    }
+
+    async fn spare_return(
+        &mut self,
+        _req: api::SpareReturnRequest,
+        _auth: api::Auth,
+    ) -> Result<api::SpareReturnResponse, Error> {
+        todo!()
+    }
+
+    async fn spare_take(
+        &mut self,
+        _req: api::SpareTakeRequest,
+        _auth: api::Auth,
+    ) -> Result<api::SpareTakeResponse, Error> {
+        todo!()
+    }
+
+    async fn spare_list(
+        &mut self,
+        _req: api::SpareListRequest,
+        _auth: api::Auth,
+    ) -> Result<api::SpareListResponse, Error> {
+        todo!()
+    }
+
+    async fn test_auth_echo(
+        &mut self,
+        _req: api::TestAuthEchoRequest,
+        _auth: api::Auth,
+    ) -> Result<api::TestAuthEchoResponse, Error> {
+        todo!()
     }
 }
 
@@ -49,7 +75,10 @@ async fn main() {
     // cors allow all
     let cors = CorsLayer::permissive();
     // build our application with a single route
-    let router = Router::new().route("/", post(handler)).layer(cors).with_state(app);
+    let router = Router::new()
+        .route("/", post(handler))
+        .layer(cors)
+        .with_state(app);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     axum::serve(listener, router).await.unwrap();

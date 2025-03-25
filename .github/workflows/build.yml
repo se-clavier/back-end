@@ -18,12 +18,17 @@ jobs:
         run: |
           rustup component add clippy
           cargo install cargo-sonar
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
       - name: Run clippy
         run: |
           cargo clippy --message-format json > clippy.json || true
       - name: Convert to sonar format
         run: |
           cargo sonar --clippy
+      - name: Run llvm-cov
+        run: |
+          cargo llvm-cov --lcov --output-path lcov.info
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v4
         env:
