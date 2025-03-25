@@ -13,20 +13,21 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+          submodules: recursive  # Enabling submodules fetching
       - uses: actions-rust-lang/setup-rust-toolchain@v1
       - name: Install dependencies
         run: |
+          sudo apt update && sudo apt install -y racket
           rustup component add clippy
           cargo install cargo-sonar
-      - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
+          cargo install cargo-llvm-cov
       - name: Run clippy
         run: |
           cargo clippy --message-format json > clippy.json || true
       - name: Convert to sonar format
         run: |
           cargo sonar --clippy
-      - name: Run llvm-cov
+      - name: Run lcov
         run: |
           cargo llvm-cov --lcov --output-path lcov.info
       - name: SonarQube Scan
