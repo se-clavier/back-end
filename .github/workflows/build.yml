@@ -6,36 +6,8 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 jobs:
-  lcov_report:
-    name: LCOV Report
-    runs-on: ubuntu-latest
-    permissions:
-      pull-requests: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
-          submodules: recursive # Fetch submodules
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          rustflags:
-      - uses: Bogdanp/setup-racket@v1.11
-        with:
-          version: "stable"
-      - name: Install dependencies
-        run: cargo install cargo-llvm-cov
-      - name: Run LCOV
-        run: cargo llvm-cov --lcov --output-path lcov.info
-      - name: Setup LCOV
-        uses: hrishikesh-kadam/setup-lcov@v1
-      - name: Report code coverage
-        uses: zgosalvez/github-actions-report-lcov@v4
-        with:
-          coverage-files: lcov.info
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          update-comment: true
-  sonarqube:
-    name: SonarQube
+  prepare:
+    name: Prepare
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -50,11 +22,58 @@ jobs:
         with:
           version: "stable"
       - name: Install dependencies
-        run: cargo install cargo-sonar
+        run: cargo install cargo-llvm-cov cargo-sonar
       - name: Run clippy
-        run: cargo clippy --message-format json > clippy.json
+        run: cargo clippy --no-deps --message-format json > clippy.json
       - name: Convert to sonar format
         run: cargo sonar --clippy
+      - name: Archive Sonar Issues
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonar-issues
+          path: sonar-issues.json
+      - name: Run LCOV
+        run: cargo llvm-cov --lcov --output-path lcov.info
+      - name: Archive LCOV Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: lcov-report
+          path: lcov.info
+  lcov_report:
+    name: LCOV Report
+    runs-on: ubuntu-latest
+    needs: prepare
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+      - name: Download LCOV Report
+        uses: actions/download-artifact@v4
+        with:
+          name: lcov-report
+      - name: Setup LCOV
+        uses: hrishikesh-kadam/setup-lcov@v1
+      - name: Report code coverage
+        uses: zgosalvez/github-actions-report-lcov@v4
+        with:
+          coverage-files: lcov.info
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          update-comment: true
+          artifact-name: code-coverage-report
+  sonarqube:
+    name: SonarQube
+    runs-on: ubuntu-latest
+    needs: prepare
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+      - name: Download Sonar Issues
+        uses: actions/download-artifact@v4
+        with:
+          name: sonar-issues
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v4
         env:
