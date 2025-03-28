@@ -9,19 +9,23 @@ jobs:
   lcov_report:
     name: LCOV Report
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
           submodules: recursive # Fetch submodules
       - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags:
+      - uses: Bogdanp/setup-racket@v1.11
+        with:
+          version: "stable"
       - name: Install dependencies
-        run: |
-          sudo apt update && sudo apt install -y racket
-          cargo install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov
       - name: Run LCOV
-        run: |
-          cargo llvm-cov --lcov --output-path lcov.info
+        run: cargo llvm-cov --lcov --output-path lcov.info
       - name: Setup LCOV
         uses: hrishikesh-kadam/setup-lcov@v1
       - name: Report code coverage
@@ -29,6 +33,7 @@ jobs:
         with:
           coverage-files: lcov.info
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          update-comment: true
   sonarqube:
     name: SonarQube
     runs-on: ubuntu-latest
@@ -36,17 +41,20 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+          submodules: recursive # Fetch submodules
       - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: clippy
+          rustflags:
+      - uses: Bogdanp/setup-racket@v1.11
+        with:
+          version: "stable"
       - name: Install dependencies
-        run: |
-          rustup component add clippy
-          cargo install cargo-sonar
+        run: cargo install cargo-sonar
       - name: Run clippy
-        run: |
-          cargo clippy --message-format json > clippy.json || true
+        run: cargo clippy --message-format json > clippy.json
       - name: Convert to sonar format
-        run: |
-          cargo sonar --clippy
+        run: cargo sonar --clippy
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v4
         env:
