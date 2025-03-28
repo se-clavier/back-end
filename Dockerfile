@@ -2,26 +2,28 @@
 # Use the latest stable version of Rust as the base image to build the project
 
 FROM rust:1.85-bookworm AS build
-WORKDIR /opt/back-end
+WORKDIR /opt/backend
 
-# Clone the repository
+# Init the repository
 
 COPY ./Cargo.toml ./Cargo.lock ./.gitmodules ./
 COPY ./src ./src
 COPY ./.git ./.git
 RUN git submodule update --init --recursive
 
+# Install the required dependencies
+
+RUN apt update && apt install --no-install-recommends -y racket
+
 # Build the project
 
-RUN make -C api prepare
-RUN make -C api src/lib.rs
 RUN cargo build --release
 
 # Create a new image with only the necessary files to run the application
 
 FROM debian:bookworm AS runtime
-RUN groupadd -r back-end && useradd -r -g back-end back-end
-USER back-end
-EXPOSE 3000
-COPY --from=build /opt/back-end/target/release/back-end /back-end
-ENTRYPOINT [ "/back-end" ]
+WORKDIR /opt/backend
+RUN groupadd -r backend && useradd -r -g backend backend
+USER backend
+COPY --from=build /opt/backend/target/release/backend backend
+ENTRYPOINT [ "./backend" ]
