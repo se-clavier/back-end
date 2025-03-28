@@ -29,6 +29,6 @@ async fn main() {
         .layer(cors)
         .with_state(app);
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:80").await.unwrap();
     axum::serve(listener, router).await.unwrap();
 }
