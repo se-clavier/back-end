@@ -1,46 +1,21 @@
-use api::{APICollection, Error, User, API};
-use axum::{
-    extract::State,
-    http::StatusCode,
-    response::{IntoResponse, Response},
-    routing::post,
-    Json, Router,
-};
+use api::{APICollection, API};
+use axum::{extract::State, response::Response, routing::post, Json, Router};
 use serde::{Deserialize, Serialize};
-use tower_http::cors::CorsLayer;
 use std::collections::HashMap;
+use tower_http::cors::CorsLayer;
 
 #[derive(Serialize, Deserialize, Clone)]
 struct App {
     db: HashMap<String, String>,
 }
 
-impl API for App {
-    async fn login(&mut self, _req: api::LoginRequest) -> Result<api::LoginResponse, api::Error> {
-        Err(Error {
-            code: 400_u16,
-            message: "bad request".to_string(),
-        })
-    }
-    async fn register(&mut self, _req: api::RegisterRequest) -> Result<api::LoginResponse, Error> {
-        Ok(api::LoginResponse {
-            user: User {
-                id: 1,
-                name: "rnoob".to_string(),
-                roles: vec![api::Role::user],
-            },
-            token: "token".to_string(),
-        })
-    }
-}
+impl API for App {}
 
 async fn handler(
     State(mut app): State<App>,
     Json(body): Json<APICollection>,
 ) -> Result<Json<impl Serialize>, Response> {
-    Ok(Json(app.handle(body).await.map_err(|e| {
-        (StatusCode::from_u16(e.code).unwrap(), Json(e)).into_response()
-    })?))
+    Ok(Json(app.handle(body).await))
 }
 
 #[tokio::main]
@@ -49,7 +24,10 @@ async fn main() {
     // cors allow all
     let cors = CorsLayer::permissive();
     // build our application with a single route
-    let router = Router::new().route("/", post(handler)).layer(cors).with_state(app);
+    let router = Router::new()
+        .route("/", post(handler))
+        .layer(cors)
+        .with_state(app);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     axum::serve(listener, router).await.unwrap();

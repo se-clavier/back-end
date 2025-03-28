@@ -6,6 +6,29 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 jobs:
+  lcov_report:
+    name: LCOV Report
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+          submodules: recursive # Fetch submodules
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Install dependencies
+        run: |
+          sudo apt update && sudo apt install -y racket
+          cargo install cargo-llvm-cov
+      - name: Run LCOV
+        run: |
+          cargo llvm-cov --lcov --output-path lcov.info
+      - name: Setup LCOV
+        uses: hrishikesh-kadam/setup-lcov@v1
+      - name: Report code coverage
+        uses: zgosalvez/github-actions-report-lcov@v4
+        with:
+          coverage-files: lcov.info
+          github-token: ${{ secrets.GITHUB_TOKEN }}
   sonarqube:
     name: SonarQube
     runs-on: ubuntu-latest
