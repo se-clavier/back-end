@@ -1,11 +1,16 @@
+
 [package]
 name = "backend"
 version = "0.1.1"
 edition = "2021"
+build = "build.rs"
 
 [dependencies]
 serde = { version = "1.0.218", features = ["derive"] }
-api = {path = "./api"}
+api = { path = "api" }
 tokio = { version = "1.43.0", features = ["full"] }
 axum = { version = "0.8.1", features = ["macros"] }
 tower-http = { version = "0.6.2", features = ["cors"] }
+tracing-subscriber = "0.3.19"
+tracing = "0.1.41"
+sqlx = { version = "0.8.3", features = ["runtime-tokio", "sqlite"] }
