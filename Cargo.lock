@@ -118,7 +118,11 @@ version = "0.1.1"
 dependencies = [
  "api",
  "axum",
+ "hex",
+ "hmac",
  "serde",
+ "serde_json",
+ "sha2",
  "sqlx",
  "tokio",
  "tower-http",

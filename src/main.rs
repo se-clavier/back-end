@@ -1,15 +1,15 @@
+mod app;
+mod config;
+mod val;
 use api::{APICollection, API};
+use app::App;
 use axum::{extract::State, response::Response, routing::post, Json, Router};
-use serde::Serialize;
-use sqlx::{
-    migrate::MigrateDatabase, Sqlite, SqlitePool,
-};
+use config::Config;
+use serde::{Deserialize, Serialize};
+use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool};
+use std::collections::HashMap;
 use tower_http::cors::CorsLayer;
 const DATABASE_URL: &str = "sqlite://sqlite.db";
-#[derive(Clone)]
-struct App {
-    pool: SqlitePool,
-}
 
 impl API for App {}
 
@@ -17,7 +17,7 @@ async fn handler(
     State(mut app): State<App>,
     Json(body): Json<APICollection>,
 ) -> Result<Json<impl Serialize>, Response> {
-    let _conn = app.pool.acquire().await;
+    let _conn = app.get_pool().acquire().await;
     Ok(Json(app.handle(body).await))
 }
 
@@ -29,14 +29,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if !Sqlite::database_exists(DATABASE_URL).await? {
         Sqlite::create_database(DATABASE_URL).await?;
     }
-
+    // Create a new config object
+    let config = Config::parse();
     // Create a new SQLite connection pool
     let pool = SqlitePool::connect(DATABASE_URL).await?;
-    
+
     // Run migrations
     sqlx::migrate!().run(&pool).await?;
 
-    let app = App { pool };
+    let app = App::new(config, pool);
     // cors allow all
     let cors = CorsLayer::permissive();
     // build our application with a single route

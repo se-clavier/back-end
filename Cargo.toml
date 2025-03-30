@@ -14,3 +14,7 @@ tower-http = { version = "0.6.2", features = ["cors"] }
 tracing-subscriber = "0.3.19"
 tracing = "0.1.41"
 sqlx = { version = "0.8.3", features = ["runtime-tokio", "sqlite"] }
+sha2 = { version = "0.10.1" }
+hex = { version = "0.4.3" }
+serde_json = { version = "1.0.103" }
+hmac = { version = "0.12.1" }
