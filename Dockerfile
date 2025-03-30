@@ -8,6 +8,7 @@ WORKDIR /opt/backend
 
 COPY ./Cargo.toml ./Cargo.lock ./.gitmodules ./
 COPY ./src ./src
+COPY ./migrations ./migrations
 COPY ./.git ./.git
 RUN git submodule update --init --recursive
 
