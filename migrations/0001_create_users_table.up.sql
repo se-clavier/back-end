@@ -6,6 +6,6 @@ create table if not exists users (
 );
 create table if not exists user_roles (
     user_id integer not null,
-    role_name text not null,
+    role_type text not null,
     foreign key (user_id) references users(id)
 );
