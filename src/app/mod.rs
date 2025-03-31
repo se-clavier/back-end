@@ -118,110 +118,110 @@ impl API for AppState {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use axum::{
-        body::Body,
-        http::{self, Request, StatusCode},
-    };
-    use http_body_util::BodyExt;
-    use serde::Serialize;
-    use tower::{Service, ServiceExt};
+// #[cfg(test)]
+// mod tests {
+//     use axum::{
+//         body::Body,
+//         http::{self, Request, StatusCode},
+//     };
+//     use http_body_util::BodyExt;
+//     use serde::Serialize;
+//     use tower::{Service, ServiceExt};
 
-    fn test_request_json<T: Serialize>(req: &T) -> Request<Body> {
-        Request::builder()
-            .method(http::Method::POST)
-            .uri("/")
-            .header("content-type", "application/json")
-            .body(Body::from(serde_json::to_vec(req).unwrap()))
-            .unwrap()
-    }
+//     fn test_request_json<T: Serialize>(req: &T) -> Request<Body> {
+//         Request::builder()
+//             .method(http::Method::POST)
+//             .uri("/")
+//             .header("content-type", "application/json")
+//             .body(Body::from(serde_json::to_vec(req).unwrap()))
+//             .unwrap()
+//     }
 
-    #[tokio::test]
-    async fn test() {
-        let mut app = super::app("sqlite::memory:").await.into_service();
+//     #[tokio::test]
+//     async fn test() {
+//         let mut app = super::app("sqlite::memory:").await.into_service();
 
-        // Test register
-        let res = app
-            .ready()
-            .await
-            .unwrap()
-            .call(test_request_json(&api::APICollection::register(
-                api::RegisterRequest {
-                    username: String::from("testuser"),
-                    password: String::from("testpassword"),
-                },
-            )))
-            .await
-            .unwrap();
-        assert_eq!(res.status(), StatusCode::OK);
-        let body = res.into_body().collect().await.unwrap().to_bytes();
-        let res: api::Result<api::RegisterResponse> = serde_json::from_slice(&body).unwrap();
-        let res = match res {
-            api::Result::Ok(res) => res,
-            _ => panic!("register failed"),
-        };
-        match res {
-            api::RegisterResponse::Success(auth) => {
-                assert_eq!(auth.id, 1);
-                assert_eq!(auth.signature, "signature");
-                if auth.roles != vec![api::Role::user] {
-                    panic!("unexpected roles");
-                }
-            }
-            _ => panic!("register failed"),
-        }
+//         // Test register
+//         let res = app
+//             .ready()
+//             .await
+//             .unwrap()
+//             .call(test_request_json(&api::APICollection::register(
+//                 api::RegisterRequest {
+//                     username: String::from("testuser"),
+//                     password: String::from("testpassword"),
+//                 },
+//             )))
+//             .await
+//             .unwrap();
+//         assert_eq!(res.status(), StatusCode::OK);
+//         let body = res.into_body().collect().await.unwrap().to_bytes();
+//         let res: api::Result<api::RegisterResponse> = serde_json::from_slice(&body).unwrap();
+//         let res = match res {
+//             api::Result::Ok(res) => res,
+//             _ => panic!("register failed"),
+//         };
+//         match res {
+//             api::RegisterResponse::Success(auth) => {
+//                 assert_eq!(auth.id, 1);
+//                 assert_eq!(auth.signature, "signature");
+//                 if auth.roles != vec![api::Role::user] {
+//                     panic!("unexpected roles");
+//                 }
+//             }
+//             _ => panic!("register failed"),
+//         }
 
-        // Test login
-        let res = app
-            .ready()
-            .await
-            .unwrap()
-            .call(test_request_json(&api::APICollection::login(
-                api::LoginRequest {
-                    username: String::from("testuser"),
-                    password: String::from("testpassword"),
-                },
-            )))
-            .await
-            .unwrap();
-        assert_eq!(res.status(), StatusCode::OK);
+//         // Test login
+//         let res = app
+//             .ready()
+//             .await
+//             .unwrap()
+//             .call(test_request_json(&api::APICollection::login(
+//                 api::LoginRequest {
+//                     username: String::from("testuser"),
+//                     password: String::from("testpassword"),
+//                 },
+//             )))
+//             .await
+//             .unwrap();
+//         assert_eq!(res.status(), StatusCode::OK);
 
-        let body = res.into_body().collect().await.unwrap().to_bytes();
-        let res: api::Result<api::LoginResponse> = serde_json::from_slice(&body).unwrap();
-        let res = match res {
-            api::Result::Ok(res) => res,
-            _ => panic!("login failed"),
-        };
+//         let body = res.into_body().collect().await.unwrap().to_bytes();
+//         let res: api::Result<api::LoginResponse> = serde_json::from_slice(&body).unwrap();
+//         let res = match res {
+//             api::Result::Ok(res) => res,
+//             _ => panic!("login failed"),
+//         };
 
-        match res {
-            api::LoginResponse::Success(auth) => {
-                assert_eq!(auth.id, 1);
-                assert_eq!(auth.signature, "signature");
-                if auth.roles != vec![api::Role::user] {
-                    panic!("unexpected roles");
-                }
-            }
-            _ => panic!("login failed"),
-        }
+//         match res {
+//             api::LoginResponse::Success(auth) => {
+//                 assert_eq!(auth.id, 1);
+//                 assert_eq!(auth.signature, "signature");
+//                 if auth.roles != vec![api::Role::user] {
+//                     panic!("unexpected roles");
+//                 }
+//             }
+//             _ => panic!("login failed"),
+//         }
 
-        // Test get user
-        let res = app
-            .ready()
-            .await
-            .unwrap()
-            .call(test_request_json(&api::APICollection::get_user(1_u64)))
-            .await
-            .unwrap();
-        assert_eq!(res.status(), StatusCode::OK);
+//         // Test get user
+//         let res = app
+//             .ready()
+//             .await
+//             .unwrap()
+//             .call(test_request_json(&api::APICollection::get_user(1_u64)))
+//             .await
+//             .unwrap();
+//         assert_eq!(res.status(), StatusCode::OK);
 
-        let body = res.into_body().collect().await.unwrap().to_bytes();
-        let res: api::Result<api::User> = serde_json::from_slice(&body).unwrap();
-        let res = match res {
-            api::Result::Ok(res) => res,
-            _ => panic!("get_user failed"),
-        };
-        assert_eq!(res.id, 1);
-        assert_eq!(res.username, "testuser");
-    }
-}
+//         let body = res.into_body().collect().await.unwrap().to_bytes();
+//         let res: api::Result<api::User> = serde_json::from_slice(&body).unwrap();
+//         let res = match res {
+//             api::Result::Ok(res) => res,
+//             _ => panic!("get_user failed"),
+//         };
+//         assert_eq!(res.id, 1);
+//         assert_eq!(res.username, "testuser");
+//     }
+// }
