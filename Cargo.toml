@@ -10,7 +10,11 @@ serde = { version = "1.0.218", features = ["derive"] }
 api = { path = "api" }
 tokio = { version = "1.43.0", features = ["full"] }
 axum = { version = "0.8.1", features = ["macros"] }
-tower-http = { version = "0.6.2", features = ["cors"] }
+tower-http = { version = "0.6.2", features = ["cors", "trace"] }
 tracing-subscriber = "0.3.19"
 tracing = "0.1.41"
 sqlx = { version = "0.8.3", features = ["runtime-tokio", "sqlite"] }
+tower = { version = "0.5.2", features = ["full", "tokio"] }
+serde_json = "1.0.140"
+http-body-util = "0.1.3"
+hyper-util = { version = "0.1.10", features = ["full", "tokio"] }
