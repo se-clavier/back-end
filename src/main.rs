@@ -17,7 +17,7 @@ async fn handler(
     State(mut app): State<App>,
     Json(body): Json<APICollection>,
 ) -> Result<Json<impl Serialize>, Response> {
-    let _conn = app.get_pool().acquire().await;
+    let _conn = app.pool.acquire().await;
     Ok(Json(app.handle(body).await))
 }
 
