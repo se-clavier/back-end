@@ -48,12 +48,12 @@ jobs:
           version: "stable"
       - name: Install dependencies
         run: cargo install cargo-llvm-cov
-      - name: Run LCOV
-        run: cargo llvm-cov --lcov --output-path lcov.info --ignore-filename-regex api
+      - name: Run Test with Coverage
+        run: cargo llvm-cov --codecov --output-path codecov.json
       - name: Codecov Report
         uses: codecov/codecov-action@v5
         with:
-          files: lcov.info
-          verbose: true
+          files: codecov.json
+          flags: unittests
           fail_ci_if_error: true
           token: ${{ secrets.CODECOV_TOKEN }}
