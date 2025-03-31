@@ -1,3 +1,5 @@
+use app::{app, connect_pool};
+
 mod app;
 
 const DATABASE_URL: &str = "sqlite://db/sqlite.db";
@@ -8,6 +10,6 @@ async fn main() {
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:80").await.unwrap();
     tracing::info!("Listening on {:?}", listener);
-    let app = app::app(DATABASE_URL).await;
+    let app = app(connect_pool(DATABASE_URL).await);
     axum::serve(listener, app).await.unwrap();
 }

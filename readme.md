@@ -1,6 +1,6 @@
 # SE-Clavier Back-end
 ## Overview
-
+[![codecov](https://codecov.io/gh/se-clavier/back-end/graph/badge.svg?token=G7S0ZC1XPS)](https://codecov.io/gh/se-clavier/back-end)
 The back-end http service runs on `0.0.0.0:80`
 
 ## Building
