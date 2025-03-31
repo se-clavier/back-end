@@ -23,7 +23,7 @@ impl UserAPI for AppState {
             };
 
         // Check if the password is correct
-        if user.2 != req.password {
+        if !self.password_hasher.verify(req.password.as_str(), user.2.as_str()) {
             tracing::info!("Incorrect password for user {:?}", (user.0, user.1));
             return LoginResponse::FailureIncorrect;
         }
@@ -65,7 +65,7 @@ impl UserAPI for AppState {
         // Insert the user into the database
         let id = sqlx::query("INSERT INTO users (username, password) VALUES (?, ?)")
             .bind(&req.username)
-            .bind(&req.password)
+            .bind(self.password_hasher.hash(&req.password))
             .execute(&self.pool)
             .await
             .unwrap()

@@ -1,18 +1,21 @@
+mod hash;
 mod user;
 
 use api::{APICollection, API};
 use axum::{extract::State, response::Response, routing::post, Json, Router};
+use hash::Hasher;
 use serde::Serialize;
 use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use user::UserAPI;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 /// Application state
 struct AppState {
     /// SQLite connection pool
     /// This pool is used to access the SQLite database
     pool: SqlitePool,
+    password_hasher: Hasher,
 }
 
 /// Handler for the root path
@@ -29,7 +32,7 @@ pub fn app(pool: SqlitePool) -> Router {
         .route("/", post(handler))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
-        .with_state(AppState { pool })
+        .with_state(AppState { pool , password_hasher: Hasher::new("YmFzZXNhbHQ") })
 }
 
 /// Create a new SQLite connection pool
