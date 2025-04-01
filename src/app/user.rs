@@ -15,7 +15,7 @@ impl UserAPI for AppState {
         let user: (i64, String, String) =
             match sqlx::query_as("SELECT id, username, password FROM users WHERE username = ?")
                 .bind(req.username)
-                .fetch_one(&self.pool)
+                .fetch_one(&self.database_pool)
                 .await
             {
                 Ok(user) => user,
@@ -35,7 +35,7 @@ impl UserAPI for AppState {
         let roles: Vec<(Role,)> =
             sqlx::query_as("SELECT role_type FROM user_roles WHERE user_id = ?")
                 .bind(user.0)
-                .fetch_all(&self.pool)
+                .fetch_all(&self.database_pool)
                 .await
                 .unwrap();
 
@@ -57,7 +57,7 @@ impl UserAPI for AppState {
         // Check if the username is already taken
         if sqlx::query("SELECT id FROM users WHERE username = ?")
             .bind(&req.username)
-            .fetch_optional(&self.pool)
+            .fetch_optional(&self.database_pool)
             .await
             .unwrap()
             .is_some()
@@ -69,7 +69,7 @@ impl UserAPI for AppState {
         let id = sqlx::query("INSERT INTO users (username, password) VALUES (?, ?)")
             .bind(&req.username)
             .bind(self.password_hasher.hash(&req.password))
-            .execute(&self.pool)
+            .execute(&self.database_pool)
             .await
             .unwrap()
             .last_insert_rowid();
@@ -78,7 +78,7 @@ impl UserAPI for AppState {
         sqlx::query("INSERT INTO user_roles (user_id, role_type) VALUES (?, ?)")
             .bind(id)
             .bind(Role::user)
-            .execute(&self.pool)
+            .execute(&self.database_pool)
             .await
             .unwrap();
 
@@ -96,19 +96,20 @@ impl UserAPI for AppState {
         let (id, username): (u64, String) =
             sqlx::query_as("SELECT id, username FROM users WHERE id = ?")
                 .bind(req as i64)
-                .fetch_one(&self.pool)
+                .fetch_one(&self.database_pool)
                 .await
                 .unwrap();
         tracing::info!("User {:?} fetched", (id, &username));
-
         api::User { id, username }
     }
 }
 
 #[cfg(test)]
-mod tests {
+mod test {
+    use crate::app;
+    use crate::app::hash::test::TEST_SALT;
+
     use super::*;
-    use crate::app::app;
 
     use api::APICollection;
     use axum::{
@@ -149,7 +150,7 @@ mod tests {
         let _tracing_guard = tracing_subscriber::fmt().with_test_writer().set_default();
 
         // Create a new app instance
-        let mut app = app(pool).into_service();
+        let mut app = app(pool, TEST_SALT).into_service();
 
         // Test register
         let body = test_request(
@@ -181,7 +182,7 @@ mod tests {
         let _tracing_guard = tracing_subscriber::fmt().with_test_writer().set_default();
 
         // Create a new app instance
-        let mut app = app(pool).into_service();
+        let mut app = app(pool, TEST_SALT).into_service();
 
         // Test register
         let body = test_request(
@@ -208,7 +209,7 @@ mod tests {
         let _tracing_guard = tracing_subscriber::fmt().with_test_writer().set_default();
 
         // Create a new app instance
-        let mut app = app(pool).into_service();
+        let mut app = app(pool, TEST_SALT).into_service();
 
         // Test login with wrong username
         // This should return FailureIncorrect
@@ -236,7 +237,7 @@ mod tests {
         let _tracing_guard = tracing_subscriber::fmt().with_test_writer().set_default();
 
         // Create a new app instance
-        let mut app = app(pool).into_service();
+        let mut app = app(pool, TEST_SALT).into_service();
 
         let body = test_request(
             &mut app,
@@ -262,7 +263,7 @@ mod tests {
         let _tracing_guard = tracing_subscriber::fmt().with_test_writer().set_default();
 
         // Create a new app instance
-        let mut app = app(pool).into_service();
+        let mut app = app(pool, TEST_SALT).into_service();
 
         let body = test_request(
             &mut app,
@@ -293,7 +294,7 @@ mod tests {
         let _tracing_guard = tracing_subscriber::fmt().with_test_writer().set_default();
 
         // Create a new app instance
-        let mut app = app(pool).into_service();
+        let mut app = app(pool, TEST_SALT).into_service();
 
         let body = test_request(&mut app, APICollection::get_user(1_u64)).await;
 

@@ -28,13 +28,15 @@ impl Hasher {
     }
 }
 
+
 #[cfg(test)]
-mod test {
+pub mod test {
     use super::*;
+    pub const TEST_SALT: &str = "YmFzZXNhbHQ";
 
     #[test]
     fn test_hash() {
-        let hasher = Hasher::new("YmFzZXNhbHQ");
+        let hasher = Hasher::new(TEST_SALT);
         let password = "password123";
         let hash = hasher.hash(password);
         println!("Hash: {}", hash);

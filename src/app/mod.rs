@@ -14,7 +14,7 @@ use user::UserAPI;
 struct AppState {
     /// SQLite connection pool
     /// This pool is used to access the SQLite database
-    pool: SqlitePool,
+    database_pool: SqlitePool,
     password_hasher: Hasher,
 }
 
@@ -27,14 +27,14 @@ async fn handler(
 }
 
 /// Create a new Axum router with the given pool
-pub fn app(pool: SqlitePool) -> Router {
+pub fn app(pool: SqlitePool, salt: &str) -> Router {
     Router::new()
         .route("/", post(handler))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(AppState {
-            pool,
-            password_hasher: Hasher::new("YmFzZXNhbHQ"),
+            database_pool: pool,
+            password_hasher: Hasher::new(salt),
         })
 }
 
