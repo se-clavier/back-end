@@ -14,7 +14,7 @@ use user::UserAPI;
 struct AppState {
     /// SQLite connection pool
     /// This pool is used to access the SQLite database
-    pool: SqlitePool,
+    database_pool: SqlitePool,
     password_hasher: Hasher,
 }
 
@@ -27,12 +27,15 @@ async fn handler(
 }
 
 /// Create a new Axum router with the given pool
-pub fn app(pool: SqlitePool) -> Router {
+pub fn app(pool: SqlitePool, salt: &str) -> Router {
     Router::new()
         .route("/", post(handler))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
-        .with_state(AppState { pool , password_hasher: Hasher::new("YmFzZXNhbHQ") })
+        .with_state(AppState {
+            database_pool: pool,
+            password_hasher: Hasher::new(salt),
+        })
 }
 
 /// Create a new SQLite connection pool
@@ -66,10 +69,16 @@ impl API for AppState {
 
 #[cfg(test)]
 mod test {
+    use tracing_subscriber::util::SubscriberInitExt;
+
     use super::*;
 
     #[tokio::test]
     async fn test_connect_pool() {
+        // Create a new tracing subscriber
+        // This is used to log the test output
+        let _tracing_guard = tracing_subscriber::fmt().with_test_writer().set_default();
+
         connect_pool("sqlite::memory:").await;
     }
 }
