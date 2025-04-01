@@ -307,4 +307,27 @@ mod test {
         assert_eq!(res.id, 1);
         assert_eq!(res.username, "testuser");
     }
+
+    #[sqlx::test(fixtures("users"))]
+    /// Test the get_user API with not found user
+    #[should_panic]
+    async fn test_get_user_not_found(pool: SqlitePool) {
+        // Create a new tracing subscriber
+        // This is used to log the test output
+        let _tracing_guard = tracing_subscriber::fmt().with_test_writer().set_default();
+
+        // Create a new app instance
+        let mut app = app(pool, TEST_SALT).into_service();
+
+        let body = test_request(&mut app, APICollection::get_user(2_u64)).await;
+
+        let res: api::Result<api::User> = serde_json::from_slice(&body).unwrap();
+        let res = match res {
+            api::Result::Ok(res) => res,
+            _ => panic!("get_user failed"),
+        };
+
+        assert_eq!(res.id, 1);
+        assert_eq!(res.username, "testuser");
+    }
 }
