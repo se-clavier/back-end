@@ -31,8 +31,8 @@ jobs:
         uses: SonarSource/sonarqube-scan-action@v4
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-  codecov:
-    name: Codecov
+  coveralls:
+    name: Coveralls
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -49,10 +49,10 @@ jobs:
       - name: Install dependencies
         run: cargo install cargo-llvm-cov
       - name: Run Test with Coverage
-        run: cargo llvm-cov --codecov --output-path codecov.json
-      - name: Codecov Report
-        uses: codecov/codecov-action@v5
+        run: cargo llvm-cov --lcov --output-path lcov.info
+      - name: Coveralls
+        uses: coverallsapp/github-action@v2
         with:
-          files: codecov.json
-          fail_ci_if_error: true
-          token: ${{ secrets.CODECOV_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          file: lcov.info
+          format: lcov
