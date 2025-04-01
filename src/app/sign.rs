@@ -16,7 +16,7 @@ impl Signer {
         Self { mac }
     }
 
-    pub fn gen_sign(&self, auth: &api::Auth) -> String {
+    fn gen_sign(&self, auth: &api::Auth) -> String {
         let mut mac = self.mac.clone();
         let data_json = json!({
             "id": auth.id,
@@ -53,7 +53,7 @@ impl Signer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use api::{Auth, Role, Result};
+    use api::{Auth, Result, Role};
 
     #[test]
     fn test_gen_sign_consistency() {
