@@ -1,6 +1,6 @@
 mod hash;
 mod user;
-
+mod sign;
 use api::{APICollection, API};
 use axum::{extract::State, response::Response, routing::post, Json, Router};
 use hash::Hasher;
