@@ -12,7 +12,8 @@ pub struct Signer {
 
 impl Signer {
     pub fn new(secret: &str) -> Self {
-        let mac = HmacSha256::new_from_slice(secret.as_bytes()).expect("Secret key error");
+        let mac = HmacSha256::new_from_slice(secret.as_bytes())
+            .expect("Secret key error");
         Self { mac }
     }
 
@@ -22,7 +23,8 @@ impl Signer {
             "id": auth.id,
             "roles": auth.roles,
         });
-        let data = serde_json::to_string(&data_json).expect("JSON serialization error");
+        let data = serde_json::to_string(&data_json)
+            .expect("JSON serialization error");
         mac.update(data.as_bytes());
         let result = mac.finalize();
         hex::encode(result.into_bytes())
@@ -33,7 +35,7 @@ impl Signer {
         auth
     }
 
-    pub async fn validate(&self, role: api::Role, auth: api::Auth) -> Result<Auth> {
+    pub fn validate(&self, role: api::Role, auth: api::Auth) -> Result<Auth> {
         let expected_sign = self.gen_sign(&auth);
         if expected_sign != auth.signature {
             return api::Result::Unauthorized;
@@ -44,6 +46,7 @@ impl Signer {
             api::Result::Unauthorized
         }
     }
+    
     pub fn verify(&self, auth: &api::Auth) -> bool {
         let expect_sign = self.gen_sign(auth);
         expect_sign == auth.signature
@@ -82,8 +85,8 @@ mod tests {
         assert!(signer.verify(&signed_auth), "signature should be valid");
     }
 
-    #[tokio::test]
-    async fn test_validate_authorized() {
+    #[test]
+    fn test_validate_authorized() {
         let secret = "mysecret";
         let signer = Signer::new(secret);
         let auth = Auth {
@@ -93,7 +96,7 @@ mod tests {
         };
         let signed_auth = signer.sign(auth);
         let expected_signature = signed_auth.signature.clone();
-        let result = signer.validate(Role::admin, signed_auth).await;
+        let result = signer.validate(Role::admin, signed_auth);
         match result {
             Result::Ok(valid_auth) => {
                 assert_eq!(
@@ -105,8 +108,8 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn test_validate_unauthorized() {
+    #[test]
+    fn test_validate_unauthorized() {
         let secret = "mysecret";
         let signer = Signer::new(secret);
         let auth = Auth {
@@ -115,7 +118,7 @@ mod tests {
             signature: String::new(),
         };
         let signed_auth = signer.sign(auth);
-        let result = signer.validate(Role::admin, signed_auth).await;
+        let result = signer.validate(Role::admin, signed_auth);
         match result {
             Result::Unauthorized => (),
             _ => panic!("Expected unauthorized, but got authorized"),
