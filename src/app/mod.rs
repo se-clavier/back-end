@@ -5,6 +5,7 @@ use api::{APICollection, API};
 use axum::{extract::State, response::Response, routing::post, Json, Router};
 use hash::Hasher;
 use serde::Serialize;
+use sign::Signer;
 use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use user::UserAPI;
@@ -16,7 +17,7 @@ struct AppState {
     /// This pool is used to access the SQLite database
     database_pool: SqlitePool,
     password_hasher: Hasher,
-    signer: sign::Signer,
+    signer: Signer,
 }
 
 /// Handler for the root path
@@ -69,26 +70,58 @@ impl API for AppState {
     }
     async fn test_auth_echo(
         &self,
-        _req: api::TestAuthEchoRequest,
+        req: api::TestAuthEchoRequest,
         _auth: api::Auth,
     ) -> api::TestAuthEchoResponse {
-        if !self.signer.verify(&_auth) {
-            return api::TestAuthEchoResponse {
-                data: "Invalid signature".to_string(),
-            };
-        }
-        api::TestAuthEchoResponse { data: _req.data }
+        api::TestAuthEchoResponse { data: req.data }
     }
 
-    async fn validate(&self, _role: api::Role, _auth: api::Auth) -> api::Result<api::Auth> {
-        self.signer.validate(_role, _auth)
+    async fn validate(&self, role: api::Role, auth: api::Auth) -> api::Result<api::Auth> {
+        self.signer.validate(role, auth)
     }
 }
 
 #[cfg(test)]
-mod test {
+pub mod test {
     use api::{Auth, Result, Role, TestAuthEchoRequest};
+    use axum::{
+        body::Body,
+        http::{self, Request, StatusCode},
+        routing::RouterIntoService,
+    };
+    use http_body_util::BodyExt;
+    use serde::de::DeserializeOwned;
+    use std::fmt::Debug;
+    use tower::{Service, ServiceExt};
     use tracing_subscriber::util::SubscriberInitExt;
+
+    /// Test helper function that makes a request to router
+    pub async fn test_request<T: DeserializeOwned + Debug>(
+        app: &mut RouterIntoService<Body>,
+        req: APICollection,
+    ) -> T {
+        let res = app
+            .ready()
+            .await
+            .unwrap()
+            .call(
+                Request::builder()
+                    .method(http::Method::POST)
+                    .uri("/")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&req).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let res: api::Result<T> =
+            serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes()).unwrap();
+        match res {
+            api::Result::Ok(res) => res,
+            _ => panic!("request failed: {:?}", res),
+        }
+    }
 
     use super::*;
 
@@ -100,6 +133,7 @@ mod test {
 
         connect_pool("sqlite::memory:").await;
     }
+
     #[tokio::test]
     async fn test_test_auth_echo_valid() {
         let salt = "mysecret";

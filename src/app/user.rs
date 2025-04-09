@@ -110,37 +110,10 @@ mod test {
     use crate::app::hash::test::TEST_SALT;
 
     use super::*;
-
+    use crate::app::test::test_request;
     use api::APICollection;
-    use axum::{
-        body::{Body, Bytes},
-        http::{self, Request, StatusCode},
-        routing::RouterIntoService,
-    };
-    use http_body_util::BodyExt;
     use sqlx::SqlitePool;
-    use tower::{Service, ServiceExt};
     use tracing_subscriber::util::SubscriberInitExt;
-
-    /// Test helper function that makes a request to router
-    async fn test_request(app: &mut RouterIntoService<Body>, req: APICollection) -> Bytes {
-        let res = app
-            .ready()
-            .await
-            .unwrap()
-            .call(
-                Request::builder()
-                    .method(http::Method::POST)
-                    .uri("/")
-                    .header("content-type", "application/json")
-                    .body(Body::from(serde_json::to_vec(&req).unwrap()))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(res.status(), StatusCode::OK);
-        res.into_body().collect().await.unwrap().to_bytes()
-    }
 
     #[sqlx::test]
     /// Test the register API
@@ -153,7 +126,7 @@ mod test {
         let mut app = app(pool, TEST_SALT).into_service();
 
         // Test register
-        let body = test_request(
+        let res: RegisterResponse = test_request(
             &mut app,
             APICollection::register(RegisterRequest {
                 username: String::from("testuser"),
@@ -162,9 +135,8 @@ mod test {
         )
         .await;
 
-        let res: api::Result<RegisterResponse> = serde_json::from_slice(&body).unwrap();
         match res {
-            api::Result::Ok(RegisterResponse::Success(auth)) => {
+            RegisterResponse::Success(auth) => {
                 assert_eq!(auth.id, 1);
                 assert_eq!(auth.signature, "signature");
                 assert_eq!(auth.roles, vec![Role::user]);
@@ -185,7 +157,7 @@ mod test {
         let mut app = app(pool, TEST_SALT).into_service();
 
         // Test register
-        let body = test_request(
+        let res: RegisterResponse = test_request(
             &mut app,
             APICollection::register(RegisterRequest {
                 username: String::from("testuser"),
@@ -193,12 +165,7 @@ mod test {
             }),
         )
         .await;
-
-        let res: api::Result<RegisterResponse> = serde_json::from_slice(&body).unwrap();
-        match res {
-            api::Result::Ok(RegisterResponse::FailureUsernameTaken) => {}
-            _ => panic!("username taken check failed"),
-        }
+        assert_eq!(res, RegisterResponse::FailureUsernameTaken, "username taken check failed");
     }
 
     #[sqlx::test(fixtures("users"))]
@@ -213,7 +180,7 @@ mod test {
 
         // Test login with wrong username
         // This should return FailureIncorrect
-        let body = test_request(
+        let res: LoginResponse = test_request(
             &mut app,
             APICollection::login(LoginRequest {
                 username: String::from("wrong_testuser"),
@@ -221,12 +188,7 @@ mod test {
             }),
         )
         .await;
-
-        let res: api::Result<LoginResponse> = serde_json::from_slice(&body).unwrap();
-        match res {
-            api::Result::Ok(LoginResponse::FailureIncorrect) => {}
-            _ => panic!("wrong username check failed"),
-        }
+        assert_eq!(res, LoginResponse::FailureIncorrect, "wrong username check failed");
     }
 
     #[sqlx::test(fixtures("users"))]
@@ -239,7 +201,8 @@ mod test {
         // Create a new app instance
         let mut app = app(pool, TEST_SALT).into_service();
 
-        let body = test_request(
+        // Test login with wrong password
+        let res: LoginResponse = test_request(
             &mut app,
             APICollection::login(LoginRequest {
                 username: String::from("testuser"),
@@ -248,11 +211,7 @@ mod test {
         )
         .await;
 
-        let res: api::Result<LoginResponse> = serde_json::from_slice(&body).unwrap();
-        match res {
-            api::Result::Ok(LoginResponse::FailureIncorrect) => {}
-            _ => panic!("wrong password check failed"),
-        }
+        assert_eq!(res, LoginResponse::FailureIncorrect, "wrong password check failed");
     }
 
     #[sqlx::test(fixtures("users"))]
@@ -265,7 +224,7 @@ mod test {
         // Create a new app instance
         let mut app = app(pool, TEST_SALT).into_service();
 
-        let body = test_request(
+        let res: LoginResponse = test_request(
             &mut app,
             APICollection::login(LoginRequest {
                 username: String::from("testuser"),
@@ -274,10 +233,8 @@ mod test {
         )
         .await;
 
-        let res: api::Result<LoginResponse> = serde_json::from_slice(&body).unwrap();
-
         match res {
-            api::Result::Ok(LoginResponse::Success(auth)) => {
+            LoginResponse::Success(auth) => {
                 assert_eq!(auth.id, 1);
                 assert_eq!(auth.signature, "signature");
                 assert_eq!(auth.roles, vec![Role::user]);
@@ -296,13 +253,7 @@ mod test {
         // Create a new app instance
         let mut app = app(pool, TEST_SALT).into_service();
 
-        let body = test_request(&mut app, APICollection::get_user(1_u64)).await;
-
-        let res: api::Result<api::User> = serde_json::from_slice(&body).unwrap();
-        let res = match res {
-            api::Result::Ok(res) => res,
-            _ => panic!("get_user failed"),
-        };
+        let res: api::User = test_request(&mut app, APICollection::get_user(1_u64)).await;
 
         assert_eq!(res.id, 1);
         assert_eq!(res.username, "testuser");
@@ -319,13 +270,7 @@ mod test {
         // Create a new app instance
         let mut app = app(pool, TEST_SALT).into_service();
 
-        let body = test_request(&mut app, APICollection::get_user(2_u64)).await;
-
-        let res: api::Result<api::User> = serde_json::from_slice(&body).unwrap();
-        let res = match res {
-            api::Result::Ok(res) => res,
-            _ => panic!("get_user failed"),
-        };
+        let res: api::User = test_request(&mut app, APICollection::get_user(2_u64)).await;
 
         assert_eq!(res.id, 1);
         assert_eq!(res.username, "testuser");
