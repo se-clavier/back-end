@@ -11,7 +11,7 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind("0.0.0.0:80").await.unwrap();
     tracing::info!("Listening on {:?}", listener);
     
-    let app = app(connect_pool(DATABASE_URL).await, "YmFzZXNhbHQ");
+    let app = app(connect_pool(DATABASE_URL).await, "YmFzZXNhbHQ", "SecretKey");
     
     tracing::info!("Starting server");
     axum::serve(listener, app).await.unwrap();
