@@ -46,22 +46,17 @@ impl Signer {
             api::Result::Unauthorized
         }
     }
-    
-    pub fn verify(&self, auth: &api::Auth) -> bool {
-        let expect_sign = self.gen_sign(auth);
-        expect_sign == auth.signature
-    }
 }
 
 #[cfg(test)]
-mod tests {
+pub mod test {
     use super::*;
     use api::{Auth, Result, Role};
+    pub const TEST_SECRET: &str = "mysecret";
 
     #[test]
     fn test_gen_sign_consistency() {
-        let secret = "mysecret";
-        let signer = Signer::new(secret);
+        let signer = Signer::new(TEST_SECRET);
         let auth = Auth {
             id: 1,
             roles: vec![Role::admin],
@@ -73,22 +68,8 @@ mod tests {
     }
 
     #[test]
-    fn test_sign_and_verify() {
-        let secret = "mysecret";
-        let signer = Signer::new(secret);
-        let auth = Auth {
-            id: 2,
-            roles: vec![Role::admin],
-            signature: String::new(),
-        };
-        let signed_auth = signer.sign(auth);
-        assert!(signer.verify(&signed_auth), "signature should be valid");
-    }
-
-    #[test]
     fn test_validate_authorized() {
-        let secret = "mysecret";
-        let signer = Signer::new(secret);
+        let signer = Signer::new(TEST_SECRET);
         let auth = Auth {
             id: 3,
             roles: vec![Role::admin, Role::user],
@@ -110,8 +91,7 @@ mod tests {
 
     #[test]
     fn test_validate_unauthorized() {
-        let secret = "mysecret";
-        let signer = Signer::new(secret);
+        let signer = Signer::new(TEST_SECRET);
         let auth = Auth {
             id: 4,
             roles: vec![Role::user],

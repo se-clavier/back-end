@@ -45,11 +45,11 @@ impl UserAPI for AppState {
             roles.iter().map(|(role,)| role).collect::<Vec<_>>()
         );
 
-        LoginResponse::Success(Auth {
+        LoginResponse::Success(self.signer.sign(Auth {
             id: user.0 as u64,
-            signature: String::from("signature"),
+            signature: String::new(),
             roles: roles.into_iter().map(|(role,)| role).collect(),
-        })
+        }))
     }
 
     /// Register a new user
@@ -84,11 +84,11 @@ impl UserAPI for AppState {
 
         tracing::info!("User {:?} registered", (id, req.username));
 
-        api::RegisterResponse::Success(Auth {
+        api::RegisterResponse::Success(self.signer.sign(Auth {
             id: id as u64,
-            signature: String::from("signature"),
+            signature: String::new(),
             roles: vec![api::Role::user],
-        })
+        }))
     }
 
     /// Get user by ID
@@ -106,40 +106,31 @@ impl UserAPI for AppState {
 
 #[cfg(test)]
 mod test {
-    use crate::app;
-    use crate::app::hash::test::TEST_SALT;
-
     use super::*;
-    use crate::app::test::test_request;
+    use crate::app::test::{test_app, TestHelper};
     use api::APICollection;
     use sqlx::SqlitePool;
-    use tracing_subscriber::util::SubscriberInitExt;
 
     #[sqlx::test]
     /// Test the register API
     async fn test_register(pool: SqlitePool) {
-        // Create a new tracing subscriber
-        // This is used to log the test output
-        let _tracing_guard = tracing_subscriber::fmt().with_test_writer().set_default();
-
-        // Create a new app instance
-        let mut app = app(pool, TEST_SALT).into_service();
+        // Create a new test app instance
+        let (app, _guard) = test_app(pool).await;
+        let mut app = app.into_service();
 
         // Test register
-        let res: RegisterResponse = test_request(
-            &mut app,
-            APICollection::register(RegisterRequest {
+        let res: RegisterResponse = app
+            .test_request(APICollection::register(RegisterRequest {
                 username: String::from("testuser"),
                 password: String::from("testpassword"),
-            }),
-        )
-        .await;
+            }))
+            .await;
 
         match res {
             RegisterResponse::Success(auth) => {
                 assert_eq!(auth.id, 1);
-                assert_eq!(auth.signature, "signature");
                 assert_eq!(auth.roles, vec![Role::user]);
+                app.test_check_auth(auth).await;
             }
             _ => panic!("register failed"),
         }
@@ -149,95 +140,87 @@ mod test {
     /// Test the register API with taken username
     /// This should return FailureUsernameTaken
     async fn test_register_username_taken(pool: SqlitePool) {
-        // Create a new tracing subscriber
-        // This is used to log the test output
-        let _tracing_guard = tracing_subscriber::fmt().with_test_writer().set_default();
-
-        // Create a new app instance
-        let mut app = app(pool, TEST_SALT).into_service();
+        // Create a new test app instance
+        let (app, _guard) = test_app(pool).await;
+        let mut app = app.into_service();
 
         // Test register
-        let res: RegisterResponse = test_request(
-            &mut app,
-            APICollection::register(RegisterRequest {
+        let res: RegisterResponse = app
+            .test_request(APICollection::register(RegisterRequest {
                 username: String::from("testuser"),
                 password: String::from("testpassword"),
-            }),
-        )
-        .await;
-        assert_eq!(res, RegisterResponse::FailureUsernameTaken, "username taken check failed");
+            }))
+            .await;
+        assert_eq!(
+            res,
+            RegisterResponse::FailureUsernameTaken,
+            "username taken check failed"
+        );
     }
 
     #[sqlx::test(fixtures("users"))]
     /// Test the login API
     async fn test_login_wrong_username(pool: SqlitePool) {
-        // Create a new tracing subscriber
-        // This is used to log the test output
-        let _tracing_guard = tracing_subscriber::fmt().with_test_writer().set_default();
-
-        // Create a new app instance
-        let mut app = app(pool, TEST_SALT).into_service();
+        // Create a new test app instance
+        let (app, _guard) = test_app(pool).await;
+        let mut app = app.into_service();
 
         // Test login with wrong username
         // This should return FailureIncorrect
-        let res: LoginResponse = test_request(
-            &mut app,
-            APICollection::login(LoginRequest {
+        let res: LoginResponse = app
+            .test_request(APICollection::login(LoginRequest {
                 username: String::from("wrong_testuser"),
                 password: String::from("password123"),
-            }),
-        )
-        .await;
-        assert_eq!(res, LoginResponse::FailureIncorrect, "wrong username check failed");
+            }))
+            .await;
+        assert_eq!(
+            res,
+            LoginResponse::FailureIncorrect,
+            "wrong username check failed"
+        );
     }
 
     #[sqlx::test(fixtures("users"))]
     /// Test the login API
     async fn test_login_wrong_password(pool: SqlitePool) {
-        // Create a new tracing subscriber
-        // This is used to log the test output
-        let _tracing_guard = tracing_subscriber::fmt().with_test_writer().set_default();
-
-        // Create a new app instance
-        let mut app = app(pool, TEST_SALT).into_service();
+        // Create a new test app instance
+        let (app, _guard) = test_app(pool).await;
+        let mut app = app.into_service();
 
         // Test login with wrong password
-        let res: LoginResponse = test_request(
-            &mut app,
-            APICollection::login(LoginRequest {
+        let res: LoginResponse = app
+            .test_request(APICollection::login(LoginRequest {
                 username: String::from("testuser"),
                 password: String::from("wrong_password"),
-            }),
-        )
-        .await;
+            }))
+            .await;
 
-        assert_eq!(res, LoginResponse::FailureIncorrect, "wrong password check failed");
+        assert_eq!(
+            res,
+            LoginResponse::FailureIncorrect,
+            "wrong password check failed"
+        );
     }
 
     #[sqlx::test(fixtures("users"))]
     /// Test the login API
     async fn test_login_correct_password(pool: SqlitePool) {
-        // Create a new tracing subscriber
-        // This is used to log the test output
-        let _tracing_guard = tracing_subscriber::fmt().with_test_writer().set_default();
+        // Create a new test app instance
+        let (app, _guard) = test_app(pool).await;
+        let mut app = app.into_service();
 
-        // Create a new app instance
-        let mut app = app(pool, TEST_SALT).into_service();
-
-        let res: LoginResponse = test_request(
-            &mut app,
-            APICollection::login(LoginRequest {
+        let res: LoginResponse = app
+            .test_request(APICollection::login(LoginRequest {
                 username: String::from("testuser"),
                 password: String::from("password123"),
-            }),
-        )
-        .await;
+            }))
+            .await;
 
         match res {
             LoginResponse::Success(auth) => {
                 assert_eq!(auth.id, 1);
-                assert_eq!(auth.signature, "signature");
                 assert_eq!(auth.roles, vec![Role::user]);
+                app.test_check_auth(auth).await;
             }
             _ => panic!("login failed"),
         }
@@ -246,14 +229,11 @@ mod test {
     #[sqlx::test(fixtures("users"))]
     /// Test the get_user API
     async fn test_get_user(pool: SqlitePool) {
-        // Create a new tracing subscriber
-        // This is used to log the test output
-        let _tracing_guard = tracing_subscriber::fmt().with_test_writer().set_default();
+        // Create a new test app instance
+        let (app, _guard) = test_app(pool).await;
+        let mut app = app.into_service();
 
-        // Create a new app instance
-        let mut app = app(pool, TEST_SALT).into_service();
-
-        let res: api::User = test_request(&mut app, APICollection::get_user(1_u64)).await;
+        let res: api::User = app.test_request(APICollection::get_user(1_u64)).await;
 
         assert_eq!(res.id, 1);
         assert_eq!(res.username, "testuser");
@@ -263,16 +243,10 @@ mod test {
     /// Test the get_user API with not found user
     #[should_panic]
     async fn test_get_user_not_found(pool: SqlitePool) {
-        // Create a new tracing subscriber
-        // This is used to log the test output
-        let _tracing_guard = tracing_subscriber::fmt().with_test_writer().set_default();
+        // Create a new test app instance
+        let (app, _guard) = test_app(pool).await;
+        let mut app = app.into_service();
 
-        // Create a new app instance
-        let mut app = app(pool, TEST_SALT).into_service();
-
-        let res: api::User = test_request(&mut app, APICollection::get_user(2_u64)).await;
-
-        assert_eq!(res.id, 1);
-        assert_eq!(res.username, "testuser");
+        let _res: api::User = app.test_request(APICollection::get_user(2_u64)).await;
     }
 }
