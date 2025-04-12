@@ -1,6 +1,8 @@
 mod hash;
 mod sign;
 mod user;
+use std::sync::Arc;
+
 use api::{APICollection, API};
 use axum::{extract::State, response::Response, routing::post, Json, Router};
 use hash::Hasher;
@@ -8,6 +10,7 @@ use serde::Serialize;
 use sign::Signer;
 use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
+use tracing::subscriber::DefaultGuard;
 use user::UserAPI;
 
 #[derive(Debug, Clone)]
@@ -18,6 +21,7 @@ struct AppState {
     database_pool: SqlitePool,
     password_hasher: Hasher,
     signer: Signer,
+    _traing_guard: Arc<DefaultGuard>,
 }
 
 /// Handler for the root path
@@ -29,7 +33,7 @@ async fn handler(
 }
 
 /// Create a new Axum router with the given pool
-pub fn app(pool: SqlitePool, salt: &str, secret: &str) -> Router {
+pub fn app(pool: SqlitePool, salt: &str, secret: &str, guard: DefaultGuard) -> Router {
     Router::new()
         .route("/", post(handler))
         .layer(CorsLayer::permissive())
@@ -38,6 +42,7 @@ pub fn app(pool: SqlitePool, salt: &str, secret: &str) -> Router {
             database_pool: pool,
             password_hasher: Hasher::new(salt),
             signer: Signer::new(secret),
+            _traing_guard: Arc::new(guard),
         })
 }
 
@@ -84,7 +89,7 @@ impl API for AppState {
 #[cfg(test)]
 pub mod test {
     use super::{hash::test::TEST_SALT, sign::test::TEST_SECRET, *};
-    use api::{Auth, Role, TestAuthEchoRequest, TestAuthEchoResponse};
+    use api::{Auth, Authed, Role, TestAuthEchoRequest, TestAuthEchoResponse};
     use axum::{
         body::Body,
         http::{self, Request, StatusCode},
@@ -92,22 +97,27 @@ pub mod test {
     };
     use http_body_util::BodyExt;
     use serde::de::DeserializeOwned;
-    use std::fmt::Debug;
+    use std::{cell::RefCell, fmt::Debug};
     use tower::{Service, ServiceExt};
-    use tracing::subscriber::DefaultGuard;
     use tracing_subscriber::util::SubscriberInitExt;
 
+    pub struct TestRouter(RefCell<RouterIntoService<Body>>);
+    impl From<Router> for TestRouter {
+        fn from(value: Router) -> Self {
+            Self(RefCell::new(value.into_service()))
+        }
+    }
     /// Test Helper trait for the app
     pub trait TestHelper {
         /// Test helper function that makes a request to router
-        async fn test_request<T: DeserializeOwned + Debug>(&mut self, req: APICollection) -> T;
+        async fn test_request<T: DeserializeOwned + Debug>(&self, req: APICollection) -> T;
 
         /// Test helper function that check auth validate
         /// # Panics
         /// Invalid `auth` will panic with `"Check Auth Failed"`
-        async fn test_check_auth(&mut self, auth: api::Auth) {
+        async fn test_check_auth(&self, auth: Auth) {
             let res: TestAuthEchoResponse = self
-                .test_request(APICollection::test_auth_echo(api::Authed {
+                .test_request(APICollection::test_auth_echo(Authed {
                     auth: auth,
                     req: TestAuthEchoRequest {
                         data: "Check Validate".to_string(),
@@ -118,9 +128,11 @@ pub mod test {
         }
     }
 
-    impl TestHelper for RouterIntoService<Body> {
-        async fn test_request<T: DeserializeOwned + Debug>(&mut self, req: APICollection) -> T {
+    impl TestHelper for TestRouter {
+        async fn test_request<T: DeserializeOwned + Debug>(&self, req: APICollection) -> T {
             let res = self
+                .0
+                .borrow_mut()
                 .ready()
                 .await
                 .unwrap()
@@ -145,15 +157,36 @@ pub mod test {
         }
     }
 
-    /// Test helper function that generates a new app instance
-    pub async fn test_app(pool: SqlitePool) -> (Router, DefaultGuard) {
-        // Create a new tracing subscriber
-        // This is used to log the test output
-        let guard: DefaultGuard = tracing_subscriber::fmt().with_test_writer().set_default();
+    impl API for TestRouter {
+        async fn login(&self, req: api::LoginRequest) -> api::LoginResponse {
+            self.test_request(APICollection::login(req)).await
+        }
+        async fn register(&self, req: api::RegisterRequest) -> api::RegisterResponse {
+            self.test_request(APICollection::register(req)).await
+        }
+        async fn get_user(&self, req: api::Id) -> api::User {
+            self.test_request(APICollection::get_user(req)).await
+        }
+        async fn test_auth_echo(
+            &self,
+            req: api::TestAuthEchoRequest,
+            auth: api::Auth,
+        ) -> api::TestAuthEchoResponse {
+            self.test_request(APICollection::test_auth_echo(Authed { auth, req }))
+                .await
+        }
+    }
 
+    /// Test helper function that generates a new app instance
+    pub async fn test_app(pool: SqlitePool) -> TestRouter {
         // Create a new app instance
-        let app = app(pool, TEST_SALT, TEST_SECRET);
-        (app, guard)
+        app(
+            pool,
+            TEST_SALT,
+            TEST_SECRET,
+            tracing_subscriber::fmt().with_test_writer().set_default(),
+        )
+        .into()
     }
 
     #[tokio::test]
@@ -168,8 +201,7 @@ pub mod test {
     #[sqlx::test]
     async fn test_test_auth_echo_valid(pool: SqlitePool) {
         // Create a new test app instance
-        let (app, _guard) = test_app(pool).await;
-        let mut app = app.into_service();
+        let app = test_app(pool).await;
 
         let signer = Signer::new(TEST_SECRET);
 
@@ -183,9 +215,7 @@ pub mod test {
             data: "Hello, world!".to_string(),
         };
 
-        let res: TestAuthEchoResponse = app
-            .test_request(APICollection::test_auth_echo(api::Authed { auth, req }))
-            .await;
+        let res = app.test_auth_echo(req, auth).await;
 
         assert_eq!(res.data, "Hello, world!");
     }
@@ -194,8 +224,7 @@ pub mod test {
     #[should_panic(expected = "request failed: Unauthorized")]
     async fn test_test_auth_echo_invalid(pool: SqlitePool) {
         // Create a new test app instance
-        let (app, _guard) = test_app(pool).await;
-        let mut app = app.into_service();
+        let app = test_app(pool).await;
 
         let auth = Auth {
             id: 1,
@@ -207,10 +236,8 @@ pub mod test {
             data: "Hacker Comes In".to_string(),
         };
 
-        let res: TestAuthEchoResponse = app
-            .test_request(APICollection::test_auth_echo(api::Authed { auth, req }))
-            .await;
-        
+        let res = app.test_auth_echo(req, auth).await;
+
         panic!("invalid auth check failed: {:?}", res);
     }
 }

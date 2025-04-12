@@ -96,9 +96,10 @@ impl UserAPI for AppState {
         let (id, username): (u64, String) =
             sqlx::query_as("SELECT id, username FROM users WHERE id = ?")
                 .bind(req as i64)
-                .fetch_one(&self.database_pool)
+                .fetch_optional(&self.database_pool)
                 .await
-                .unwrap();
+                .unwrap()
+                .expect("User not found");
         tracing::info!("User {:?} fetched", (id, &username));
         api::User { id, username }
     }
@@ -108,22 +109,20 @@ impl UserAPI for AppState {
 mod test {
     use super::*;
     use crate::app::test::{test_app, TestHelper};
-    use api::APICollection;
+    use api::{APICollection, Authed, API};
     use sqlx::SqlitePool;
 
     #[sqlx::test]
     /// Test the register API
     async fn test_register(pool: SqlitePool) {
         // Create a new test app instance
-        let (app, _guard) = test_app(pool).await;
-        let mut app = app.into_service();
-
+        let app = test_app(pool).await;
         // Test register
-        let res: RegisterResponse = app
-            .test_request(APICollection::register(RegisterRequest {
+        let res = app
+            .register(RegisterRequest {
                 username: String::from("testuser"),
                 password: String::from("testpassword"),
-            }))
+            })
             .await;
 
         match res {
@@ -141,16 +140,16 @@ mod test {
     /// This should return FailureUsernameTaken
     async fn test_register_username_taken(pool: SqlitePool) {
         // Create a new test app instance
-        let (app, _guard) = test_app(pool).await;
-        let mut app = app.into_service();
+        let app = test_app(pool).await;
 
         // Test register
         let res: RegisterResponse = app
-            .test_request(APICollection::register(RegisterRequest {
+            .register(RegisterRequest {
                 username: String::from("testuser"),
                 password: String::from("testpassword"),
-            }))
+            })
             .await;
+
         assert_eq!(
             res,
             RegisterResponse::FailureUsernameTaken,
@@ -162,17 +161,17 @@ mod test {
     /// Test the login API
     async fn test_login_wrong_username(pool: SqlitePool) {
         // Create a new test app instance
-        let (app, _guard) = test_app(pool).await;
-        let mut app = app.into_service();
+        let app = test_app(pool).await;
 
         // Test login with wrong username
         // This should return FailureIncorrect
         let res: LoginResponse = app
-            .test_request(APICollection::login(LoginRequest {
+            .login(LoginRequest {
                 username: String::from("wrong_testuser"),
                 password: String::from("password123"),
-            }))
+            })
             .await;
+
         assert_eq!(
             res,
             LoginResponse::FailureIncorrect,
@@ -184,15 +183,14 @@ mod test {
     /// Test the login API
     async fn test_login_wrong_password(pool: SqlitePool) {
         // Create a new test app instance
-        let (app, _guard) = test_app(pool).await;
-        let mut app = app.into_service();
+        let app = test_app(pool).await;
 
         // Test login with wrong password
-        let res: LoginResponse = app
-            .test_request(APICollection::login(LoginRequest {
+        let res = app
+            .login(LoginRequest {
                 username: String::from("testuser"),
                 password: String::from("wrong_password"),
-            }))
+            })
             .await;
 
         assert_eq!(
@@ -206,8 +204,7 @@ mod test {
     /// Test the login API
     async fn test_login_correct_password(pool: SqlitePool) {
         // Create a new test app instance
-        let (app, _guard) = test_app(pool).await;
-        let mut app = app.into_service();
+        let app = test_app(pool).await;
 
         let res: LoginResponse = app
             .test_request(APICollection::login(LoginRequest {
@@ -230,8 +227,7 @@ mod test {
     /// Test the get_user API
     async fn test_get_user(pool: SqlitePool) {
         // Create a new test app instance
-        let (app, _guard) = test_app(pool).await;
-        let mut app = app.into_service();
+        let app = test_app(pool).await;
 
         let res: api::User = app.test_request(APICollection::get_user(1_u64)).await;
 
@@ -241,11 +237,10 @@ mod test {
 
     #[sqlx::test(fixtures("users"))]
     /// Test the get_user API with not found user
-    #[should_panic]
+    #[should_panic(expected = "User not found")]
     async fn test_get_user_not_found(pool: SqlitePool) {
         // Create a new test app instance
-        let (app, _guard) = test_app(pool).await;
-        let mut app = app.into_service();
+        let app = test_app(pool).await;
 
         let _res: api::User = app.test_request(APICollection::get_user(2_u64)).await;
     }

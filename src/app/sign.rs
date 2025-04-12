@@ -1,6 +1,5 @@
 use api::{Auth, Result};
 use hmac::{Hmac, Mac};
-use serde_json::json;
 use sha2::Sha256;
 
 type HmacSha256 = Hmac<Sha256>;
@@ -12,19 +11,17 @@ pub struct Signer {
 
 impl Signer {
     pub fn new(secret: &str) -> Self {
-        let mac = HmacSha256::new_from_slice(secret.as_bytes())
-            .expect("Secret key error");
+        let mac = HmacSha256::new_from_slice(secret.as_bytes()).expect("Secret key error");
         Self { mac }
     }
 
     fn gen_sign(&self, auth: &api::Auth) -> String {
         let mut mac = self.mac.clone();
-        let data_json = json!({
-            "id": auth.id,
-            "roles": auth.roles,
-        });
-        let data = serde_json::to_string(&data_json)
-            .expect("JSON serialization error");
+        let auth = Auth {
+            signature: String::new(),
+            ..auth.clone()
+        };
+        let data = serde_json::to_string(&auth).expect("JSON serialization error");
         mac.update(data.as_bytes());
         let result = mac.finalize();
         hex::encode(result.into_bytes())
@@ -99,9 +96,10 @@ pub mod test {
         };
         let signed_auth = signer.sign(auth);
         let result = signer.validate(Role::admin, signed_auth);
-        match result {
-            Result::Unauthorized => (),
-            _ => panic!("Expected unauthorized, but got authorized"),
-        }
+        assert_eq!(
+            result,
+            Result::Unauthorized,
+            "Expected unauthorized, but got authorized"
+        );
     }
 }
