@@ -84,6 +84,22 @@ impl API for AppState {
     async fn validate(&self, role: api::Role, auth: api::Auth) -> api::Result<api::Auth> {
         self.signer.validate(role, auth)
     }
+
+    async fn reset_password(
+        &self,
+        req: api::ResetPasswordRequest,
+        auth: api::Auth,
+    ) -> api::ResetPasswordResponse {
+        UserAPI::reset_password(self, req, auth).await
+    }
+
+    async fn reset_password_admin(
+        &self,
+        req: api::ResetPasswordAdminRequest,
+        auth: api::Auth,
+    ) -> api::ResetPasswordAdminResponse {
+        UserAPI::reset_password_admin(self, req, auth).await
+    }
 }
 
 #[cfg(test)]
@@ -102,6 +118,7 @@ pub mod test {
     use tracing_subscriber::util::SubscriberInitExt;
 
     pub struct TestRouter(RefCell<RouterIntoService<Body>>);
+    
     impl From<Router> for TestRouter {
         fn from(value: Router) -> Self {
             Self(RefCell::new(value.into_service()))
@@ -118,7 +135,7 @@ pub mod test {
         async fn test_check_auth(&self, auth: Auth) {
             let res: TestAuthEchoResponse = self
                 .test_request(APICollection::test_auth_echo(Authed {
-                    auth: auth,
+                    auth,
                     req: TestAuthEchoRequest {
                         data: "Check Validate".to_string(),
                     },
@@ -156,7 +173,7 @@ pub mod test {
             }
         }
     }
-
+    
     impl API for TestRouter {
         async fn login(&self, req: api::LoginRequest) -> api::LoginResponse {
             self.test_request(APICollection::login(req)).await
@@ -173,6 +190,22 @@ pub mod test {
             auth: api::Auth,
         ) -> api::TestAuthEchoResponse {
             self.test_request(APICollection::test_auth_echo(Authed { auth, req }))
+                .await
+        }
+        async fn reset_password(
+            &self,
+            req: api::ResetPasswordRequest,
+            auth: Auth,
+        ) -> api::ResetPasswordResponse {
+            self.test_request(APICollection::reset_password(Authed { auth, req }))
+                .await
+        }
+        async fn reset_password_admin(
+            &self,
+            req: api::ResetPasswordAdminRequest,
+            auth: Auth,
+        ) -> api::ResetPasswordAdminResponse {
+            self.test_request(APICollection::reset_password_admin(Authed { auth, req }))
                 .await
         }
     }
