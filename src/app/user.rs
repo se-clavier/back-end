@@ -152,15 +152,15 @@ impl UserAPI for AppState {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::app::test::{test_app, TestHelper, TestRouter};
-    use api::{APICollection, API};
+    use crate::app::test::TestApp;
+    use api::RevAPI;
     use sqlx::SqlitePool;
 
     #[sqlx::test]
     /// Test the register API
     async fn test_register(pool: SqlitePool) {
         // Create a new test app instance
-        let app = test_app(pool).await;
+        let app = TestApp::new(pool);
         // Test register
         let res = app
             .register(RegisterRequest {
@@ -173,7 +173,7 @@ mod test {
             RegisterResponse::Success(auth) => {
                 assert_eq!(auth.id, 1);
                 assert_eq!(auth.roles, vec![Role::user]);
-                app.test_check_auth(auth).await;
+                app.check_auth(auth).await;
             }
             _ => panic!("register failed"),
         }
@@ -184,7 +184,7 @@ mod test {
     /// This should return FailureUsernameTaken
     async fn test_register_username_taken(pool: SqlitePool) {
         // Create a new test app instance
-        let app = test_app(pool).await;
+        let app = TestApp::new(pool);
 
         // Test register
         let res: RegisterResponse = app
@@ -205,7 +205,7 @@ mod test {
     /// Test the login API
     async fn test_login_wrong_username(pool: SqlitePool) {
         // Create a new test app instance
-        let app = test_app(pool).await;
+        let app = TestApp::new(pool);
 
         // Test login with wrong username
         // This should return FailureIncorrect
@@ -227,7 +227,7 @@ mod test {
     /// Test the login API
     async fn test_login_wrong_password(pool: SqlitePool) {
         // Create a new test app instance
-        let app = test_app(pool).await;
+        let app = TestApp::new(pool);
 
         // Test login with wrong password
         let res = app
@@ -248,20 +248,20 @@ mod test {
     /// Test the login API
     async fn test_login_correct_password(pool: SqlitePool) {
         // Create a new test app instance
-        let app = test_app(pool).await;
+        let app = TestApp::new(pool);
 
-        let res: LoginResponse = app
-            .test_request(APICollection::login(LoginRequest {
+        let res = app
+            .login(LoginRequest {
                 username: String::from("testuser"),
                 password: String::from("password123"),
-            }))
+            })
             .await;
 
         match res {
             LoginResponse::Success(auth) => {
                 assert_eq!(auth.id, 1);
                 assert_eq!(auth.roles, vec![Role::user]);
-                app.test_check_auth(auth).await;
+                app.check_auth(auth).await;
             }
             _ => panic!("login failed"),
         }
@@ -271,7 +271,7 @@ mod test {
     /// Test the get_user API
     async fn test_get_user(pool: SqlitePool) {
         // Create a new test app instance
-        let app = test_app(pool).await;
+        let app = TestApp::new(pool);
 
         let res = app.get_user(1).await;
 
@@ -284,12 +284,12 @@ mod test {
     #[should_panic(expected = "User not found")]
     async fn test_get_user_not_found(pool: SqlitePool) {
         // Create a new test app instance
-        let app = test_app(pool).await;
+        let app = TestApp::new(pool);
 
         let _res: api::User = app.get_user(404).await;
     }
 
-    async fn check_reset(app: &TestRouter, username: &str, password: &str, chk_password: &str) {
+    async fn check_reset(app: &TestApp, username: &str, password: &str, chk_password: &str) {
         match app
             .login(LoginRequest {
                 username: String::from(username),
@@ -300,7 +300,7 @@ mod test {
             LoginResponse::Success(auth) => {
                 assert_eq!(auth.id, 1);
                 assert_eq!(auth.roles, vec![Role::user]);
-                app.test_check_auth(auth).await;
+                app.check_auth(auth).await;
             }
             _ => panic!("reset login failed"),
         }
@@ -318,7 +318,7 @@ mod test {
     #[sqlx::test(fixtures("users"))]
     async fn test_reset_passwd(pool: SqlitePool) {
         // Create a new test app instance
-        let app = test_app(pool).await;
+        let app = TestApp::new(pool);
 
         let auth = match app
             .login(LoginRequest {
@@ -348,7 +348,7 @@ mod test {
     #[sqlx::test(fixtures("users"))]
     async fn test_reset_passwd_admin(pool: SqlitePool) {
         // Create a new test app instance
-        let app = test_app(pool).await;
+        let app = TestApp::new(pool);
 
         let auth = match app
             .login(LoginRequest {
@@ -379,7 +379,7 @@ mod test {
     #[sqlx::test(fixtures("users"))]
     async fn test_reset_passwd_admin_not_found(pool: SqlitePool) {
         // Create a new test app instance
-        let app = test_app(pool).await;
+        let app = TestApp::new(pool);
 
         let auth = match app
             .login(LoginRequest {
