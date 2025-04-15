@@ -1,4 +1,8 @@
-use api::{Auth, LoginRequest, LoginResponse, RegisterRequest, RegisterResponse, Role};
+use api::{
+    Auth, LoginRequest, LoginResponse, RegisterRequest, RegisterResponse,
+    ResetPasswordAdminRequest, ResetPasswordAdminResponse, ResetPasswordRequest,
+    ResetPasswordResponse, Role,
+};
 
 use super::AppState;
 
@@ -6,6 +10,12 @@ pub trait UserAPI {
     async fn login(&self, req: LoginRequest) -> LoginResponse;
     async fn register(&self, req: RegisterRequest) -> RegisterResponse;
     async fn get_user(&self, req: api::Id) -> api::User;
+    async fn reset_password(&self, req: ResetPasswordRequest, auth: Auth) -> ResetPasswordResponse;
+    async fn reset_password_admin(
+        &self,
+        req: ResetPasswordAdminRequest,
+        auth: Auth,
+    ) -> ResetPasswordAdminResponse;
 }
 
 impl UserAPI for AppState {
@@ -96,34 +106,67 @@ impl UserAPI for AppState {
         let (id, username): (u64, String) =
             sqlx::query_as("SELECT id, username FROM users WHERE id = ?")
                 .bind(req as i64)
-                .fetch_one(&self.database_pool)
+                .fetch_optional(&self.database_pool)
                 .await
-                .unwrap();
+                .unwrap()
+                .expect("User not found");
         tracing::info!("User {:?} fetched", (id, &username));
         api::User { id, username }
+    }
+
+    async fn reset_password(
+        &self,
+        req: ResetPasswordRequest,
+        auth: api::Auth,
+    ) -> ResetPasswordResponse {
+        sqlx::query("UPDATE users SET password = ? WHERE id = ?")
+            .bind(self.password_hasher.hash(&req.password))
+            .bind(auth.id as i64)
+            .execute(&self.database_pool)
+            .await
+            .unwrap();
+        tracing::info!("Password of user {:?} changed", auth.id);
+        ResetPasswordResponse::Success
+    }
+
+    async fn reset_password_admin(
+        &self,
+        req: ResetPasswordAdminRequest,
+        _auth: Auth,
+    ) -> ResetPasswordAdminResponse {
+        let res = sqlx::query("UPDATE users SET password = ? WHERE id = ?")
+            .bind(self.password_hasher.hash(&req.password))
+            .bind(req.id as i64)
+            .execute(&self.database_pool)
+            .await
+            .unwrap();
+        if res.rows_affected() == 0 {
+            tracing::info!("User {:?} not found", req.id);
+            return ResetPasswordAdminResponse::FailureUserNotFound;
+        }
+        tracing::info!("Password of user {:?} changed", req.id);
+        ResetPasswordAdminResponse::Success
     }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::app::test::{test_app, TestHelper};
-    use api::APICollection;
+    use crate::app::test::{test_app, TestHelper, TestRouter};
+    use api::{APICollection, API};
     use sqlx::SqlitePool;
 
     #[sqlx::test]
     /// Test the register API
     async fn test_register(pool: SqlitePool) {
         // Create a new test app instance
-        let (app, _guard) = test_app(pool).await;
-        let mut app = app.into_service();
-
+        let app = test_app(pool).await;
         // Test register
-        let res: RegisterResponse = app
-            .test_request(APICollection::register(RegisterRequest {
+        let res = app
+            .register(RegisterRequest {
                 username: String::from("testuser"),
                 password: String::from("testpassword"),
-            }))
+            })
             .await;
 
         match res {
@@ -141,16 +184,16 @@ mod test {
     /// This should return FailureUsernameTaken
     async fn test_register_username_taken(pool: SqlitePool) {
         // Create a new test app instance
-        let (app, _guard) = test_app(pool).await;
-        let mut app = app.into_service();
+        let app = test_app(pool).await;
 
         // Test register
         let res: RegisterResponse = app
-            .test_request(APICollection::register(RegisterRequest {
+            .register(RegisterRequest {
                 username: String::from("testuser"),
                 password: String::from("testpassword"),
-            }))
+            })
             .await;
+
         assert_eq!(
             res,
             RegisterResponse::FailureUsernameTaken,
@@ -162,17 +205,17 @@ mod test {
     /// Test the login API
     async fn test_login_wrong_username(pool: SqlitePool) {
         // Create a new test app instance
-        let (app, _guard) = test_app(pool).await;
-        let mut app = app.into_service();
+        let app = test_app(pool).await;
 
         // Test login with wrong username
         // This should return FailureIncorrect
         let res: LoginResponse = app
-            .test_request(APICollection::login(LoginRequest {
+            .login(LoginRequest {
                 username: String::from("wrong_testuser"),
                 password: String::from("password123"),
-            }))
+            })
             .await;
+
         assert_eq!(
             res,
             LoginResponse::FailureIncorrect,
@@ -184,15 +227,14 @@ mod test {
     /// Test the login API
     async fn test_login_wrong_password(pool: SqlitePool) {
         // Create a new test app instance
-        let (app, _guard) = test_app(pool).await;
-        let mut app = app.into_service();
+        let app = test_app(pool).await;
 
         // Test login with wrong password
-        let res: LoginResponse = app
-            .test_request(APICollection::login(LoginRequest {
+        let res = app
+            .login(LoginRequest {
                 username: String::from("testuser"),
                 password: String::from("wrong_password"),
-            }))
+            })
             .await;
 
         assert_eq!(
@@ -206,8 +248,7 @@ mod test {
     /// Test the login API
     async fn test_login_correct_password(pool: SqlitePool) {
         // Create a new test app instance
-        let (app, _guard) = test_app(pool).await;
-        let mut app = app.into_service();
+        let app = test_app(pool).await;
 
         let res: LoginResponse = app
             .test_request(APICollection::login(LoginRequest {
@@ -230,10 +271,9 @@ mod test {
     /// Test the get_user API
     async fn test_get_user(pool: SqlitePool) {
         // Create a new test app instance
-        let (app, _guard) = test_app(pool).await;
-        let mut app = app.into_service();
+        let app = test_app(pool).await;
 
-        let res: api::User = app.test_request(APICollection::get_user(1_u64)).await;
+        let res = app.get_user(1).await;
 
         assert_eq!(res.id, 1);
         assert_eq!(res.username, "testuser");
@@ -241,12 +281,131 @@ mod test {
 
     #[sqlx::test(fixtures("users"))]
     /// Test the get_user API with not found user
-    #[should_panic]
+    #[should_panic(expected = "User not found")]
     async fn test_get_user_not_found(pool: SqlitePool) {
         // Create a new test app instance
-        let (app, _guard) = test_app(pool).await;
-        let mut app = app.into_service();
+        let app = test_app(pool).await;
 
-        let _res: api::User = app.test_request(APICollection::get_user(2_u64)).await;
+        let _res: api::User = app.get_user(404).await;
+    }
+
+    async fn check_reset(app: &TestRouter, username: &str, password: &str, chk_password: &str) {
+        match app
+            .login(LoginRequest {
+                username: String::from(username),
+                password: String::from(password),
+            })
+            .await
+        {
+            LoginResponse::Success(auth) => {
+                assert_eq!(auth.id, 1);
+                assert_eq!(auth.roles, vec![Role::user]);
+                app.test_check_auth(auth).await;
+            }
+            _ => panic!("reset login failed"),
+        }
+
+        let res = app
+            .login(LoginRequest {
+                username: String::from(username),
+                password: String::from(chk_password),
+            })
+            .await;
+
+        assert_eq!(res, LoginResponse::FailureIncorrect, "reset check failed");
+    }
+
+    #[sqlx::test(fixtures("users"))]
+    async fn test_reset_passwd(pool: SqlitePool) {
+        // Create a new test app instance
+        let app = test_app(pool).await;
+
+        let auth = match app
+            .login(LoginRequest {
+                username: String::from("testuser"),
+                password: String::from("password123"),
+            })
+            .await
+        {
+            LoginResponse::Success(auth) => auth,
+            _ => panic!("login failed"),
+        };
+
+        let res = app
+            .reset_password(
+                ResetPasswordRequest {
+                    password: String::from("reset_password123"),
+                },
+                auth,
+            )
+            .await;
+
+        assert_eq!(res, ResetPasswordResponse::Success, "reset failed");
+
+        check_reset(&app, "testuser", "reset_password123", "password123").await;
+    }
+
+    #[sqlx::test(fixtures("users"))]
+    async fn test_reset_passwd_admin(pool: SqlitePool) {
+        // Create a new test app instance
+        let app = test_app(pool).await;
+
+        let auth = match app
+            .login(LoginRequest {
+                username: String::from("testadmin"),
+                password: String::from("password123"),
+            })
+            .await
+        {
+            LoginResponse::Success(auth) => auth,
+            _ => panic!("login failed"),
+        };
+
+        let res = app
+            .reset_password_admin(
+                ResetPasswordAdminRequest {
+                    id: 1,
+                    password: String::from("reset_password123"),
+                },
+                auth,
+            )
+            .await;
+
+        assert_eq!(res, ResetPasswordAdminResponse::Success, "reset failed");
+
+        check_reset(&app, "testuser", "reset_password123", "password123").await;
+    }
+
+    #[sqlx::test(fixtures("users"))]
+    async fn test_reset_passwd_admin_not_found(pool: SqlitePool) {
+        // Create a new test app instance
+        let app = test_app(pool).await;
+
+        let auth = match app
+            .login(LoginRequest {
+                username: String::from("testadmin"),
+                password: String::from("password123"),
+            })
+            .await
+        {
+            LoginResponse::Success(auth) => auth,
+            _ => panic!("login failed"),
+        };
+
+        let res = app
+            .reset_password_admin(
+                ResetPasswordAdminRequest {
+                    id: 404,
+                    password: String::from("reset_password123"),
+                },
+                auth,
+            )
+            .await;
+
+        assert_eq!(
+            res,
+            ResetPasswordAdminResponse::FailureUserNotFound,
+            "not found check failed"
+        );
     }
 }
