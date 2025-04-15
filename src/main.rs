@@ -9,8 +9,7 @@ const DATABASE_URL: &str = "sqlite://db/sqlite.db";
 async fn main() {
     let app = app(
         connect_pool(DATABASE_URL).await,
-        "YmFzZXNhbHQ",
-        "SecretKey",
+        Default::default(),
         tracing_subscriber::fmt().set_default(),
     );
 
