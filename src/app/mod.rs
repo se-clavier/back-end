@@ -1,10 +1,16 @@
 mod hash;
+
 mod sign;
+
 mod user;
+
+mod config;
+
 use std::sync::Arc;
 
 use api::{APICollection, API};
 use axum::{extract::State, response::Response, routing::post, Json, Router};
+use config::Config;
 use hash::Hasher;
 use serde::Serialize;
 use sign::Signer;
@@ -12,6 +18,10 @@ use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing::subscriber::DefaultGuard;
 use user::UserAPI;
+
+const DEFAULT_SECRET: &str = "mysecret";
+
+const DEFAULT_SALT: &str = "YmFzZXNhbHQ";
 
 #[derive(Debug, Clone)]
 /// Application state
@@ -33,15 +43,15 @@ async fn handler(
 }
 
 /// Create a new Axum router with the given pool
-pub fn app(pool: SqlitePool, salt: &str, secret: &str, guard: DefaultGuard) -> Router {
+pub fn app(pool: SqlitePool, cfg: Config, guard: DefaultGuard) -> Router {
     Router::new()
         .route("/", post(handler))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(AppState {
             database_pool: pool,
-            password_hasher: Hasher::new(salt),
-            signer: Signer::new(secret),
+            password_hasher: Hasher::new(&cfg.salt),
+            signer: Signer::new(&cfg.secret),
             _traing_guard: Arc::new(guard),
         })
 }
@@ -104,7 +114,7 @@ impl API for AppState {
 
 #[cfg(test)]
 pub mod test {
-    use super::{hash::test::TEST_SALT, sign::test::TEST_SECRET, *};
+    use super::*;
     use api::{Auth, RevAPI, Role, TestAuthEchoRequest};
     use axum::{
         body::Body,
@@ -129,12 +139,12 @@ pub mod test {
         pub fn new(pool: SqlitePool) -> Self {
             app(
                 pool,
-                TEST_SALT,
-                TEST_SECRET,
+                Default::default(),
                 tracing_subscriber::fmt().with_test_writer().set_default(),
             )
             .into()
         }
+
         /// Test helper function that check auth validate
         /// # Panics
         /// Invalid `auth` will panic with `"Check Auth Failed"`
@@ -194,7 +204,7 @@ pub mod test {
         // Create a new test app instance
         let app = TestApp::new(pool);
 
-        let signer = Signer::new(TEST_SECRET);
+        let signer = Signer::default();
 
         let auth = signer.sign(Auth {
             id: 1,

@@ -9,6 +9,12 @@ pub struct Signer {
     mac: HmacSha256,
 }
 
+impl Default for Signer {
+    fn default() -> Self {
+        Self::new(super::DEFAULT_SECRET)
+    }
+}
+
 impl Signer {
     pub fn new(secret: &str) -> Self {
         let mac = HmacSha256::new_from_slice(secret.as_bytes()).expect("Secret key error");
@@ -47,13 +53,13 @@ impl Signer {
 
 #[cfg(test)]
 pub mod test {
+
     use super::*;
     use api::{Auth, Result, Role};
-    pub const TEST_SECRET: &str = "mysecret";
 
     #[test]
     fn test_gen_sign_consistency() {
-        let signer = Signer::new(TEST_SECRET);
+        let signer = Signer::default();
         let auth = Auth {
             id: 1,
             roles: vec![Role::admin],
@@ -66,7 +72,7 @@ pub mod test {
 
     #[test]
     fn test_validate_authorized() {
-        let signer = Signer::new(TEST_SECRET);
+        let signer = Signer::default();
         let auth = Auth {
             id: 3,
             roles: vec![Role::admin, Role::user],
@@ -88,7 +94,7 @@ pub mod test {
 
     #[test]
     fn test_validate_unauthorized() {
-        let signer = Signer::new(TEST_SECRET);
+        let signer = Signer::default();
         let auth = Auth {
             id: 4,
             roles: vec![Role::user],
