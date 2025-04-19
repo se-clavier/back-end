@@ -1,5 +1,5 @@
 # SE-Clavier Back-end
-[![codecov](https://codecov.io/gh/se-clavier/back-end/graph/badge.svg?token=G7S0ZC1XPS)](https://codecov.io/gh/se-clavier/back-end) [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=se-clavier_back-end&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=se-clavier_back-end) [![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=se-clavier_back-end&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=se-clavier_back-end)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=se-clavier_back-end&metric=coverage)](https://sonarcloud.io/summary/new_code?id=se-clavier_back-end) [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=se-clavier_back-end&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=se-clavier_back-end) [![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=se-clavier_back-end&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=se-clavier_back-end)
 ## Overview
 The back-end http service runs on `0.0.0.0:80`
 
