@@ -6,8 +6,6 @@ mod user;
 
 mod config;
 
-use std::sync::Arc;
-
 use api::{APICollection, API};
 use axum::{extract::State, response::Response, routing::post, Json, Router};
 use config::Config;
@@ -16,7 +14,6 @@ use serde::Serialize;
 use sign::Signer;
 use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
-use tracing::subscriber::DefaultGuard;
 use user::UserAPI;
 
 const DEFAULT_SECRET: &str = "mysecret";
@@ -31,7 +28,6 @@ struct AppState {
     database_pool: SqlitePool,
     password_hasher: Hasher,
     signer: Signer,
-    _traing_guard: Arc<DefaultGuard>,
 }
 
 /// Handler for the root path
@@ -43,7 +39,7 @@ async fn handler(
 }
 
 /// Create a new Axum router with the given pool
-pub fn app(pool: SqlitePool, cfg: Config, guard: DefaultGuard) -> Router {
+pub fn app(pool: SqlitePool, cfg: Config) -> Router {
     Router::new()
         .route("/", post(handler))
         .layer(CorsLayer::permissive())
@@ -52,7 +48,6 @@ pub fn app(pool: SqlitePool, cfg: Config, guard: DefaultGuard) -> Router {
             database_pool: pool,
             password_hasher: Hasher::new(&cfg.salt),
             signer: Signer::new(&cfg.secret),
-            _traing_guard: Arc::new(guard),
         })
 }
 
@@ -123,26 +118,26 @@ pub mod test {
     };
     use http_body_util::BodyExt;
     use serde::de::DeserializeOwned;
+    use tracing::subscriber::DefaultGuard;
     use std::{cell::RefCell, fmt::Debug};
     use tower::{Service, ServiceExt};
     use tracing_subscriber::util::SubscriberInitExt;
 
-    pub struct TestApp(RefCell<RouterIntoService<Body>>);
+    #[allow(unused)]
+    pub struct TestApp(RefCell<RouterIntoService<Body>>, DefaultGuard);
 
     impl From<Router> for TestApp {
         fn from(value: Router) -> Self {
-            Self(RefCell::new(value.into_service()))
+            Self(
+                RefCell::new(value.into_service()),
+                tracing_subscriber::fmt().with_test_writer().set_default(),
+            )
         }
     }
 
     impl TestApp {
         pub fn new(pool: SqlitePool) -> Self {
-            app(
-                pool,
-                Default::default(),
-                tracing_subscriber::fmt().with_test_writer().set_default(),
-            )
-            .into()
+            app(pool, Default::default()).into()
         }
 
         /// Test helper function that check auth validate
