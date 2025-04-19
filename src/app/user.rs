@@ -1,8 +1,4 @@
-use api::{
-    Auth, LoginRequest, LoginResponse, RegisterRequest, RegisterResponse,
-    ResetPasswordAdminRequest, ResetPasswordAdminResponse, ResetPasswordRequest,
-    ResetPasswordResponse, Role,
-};
+use api::*;
 
 use super::AppState;
 
@@ -153,8 +149,9 @@ impl UserAPI for AppState {
 #[cfg(test)]
 mod test {
     use super::*;
+
     use crate::app::test::TestApp;
-    use api::RevAPI;
+
     use sqlx::SqlitePool;
 
     #[sqlx::test]
