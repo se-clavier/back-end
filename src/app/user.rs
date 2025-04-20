@@ -1,10 +1,9 @@
+use super::AppState;
 use api::{
     Auth, LoginRequest, LoginResponse, RegisterRequest, RegisterResponse,
     ResetPasswordAdminRequest, ResetPasswordAdminResponse, ResetPasswordRequest,
     ResetPasswordResponse, Role,
 };
-
-use super::AppState;
 
 pub trait UserAPI {
     async fn login(&self, req: LoginRequest) -> LoginResponse;
@@ -153,8 +152,10 @@ impl UserAPI for AppState {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::app::test::TestApp;
     use api::RevAPI;
+
+    use crate::app::test::TestApp;
+
     use sqlx::SqlitePool;
 
     #[sqlx::test]

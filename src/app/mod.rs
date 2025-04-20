@@ -2,6 +2,8 @@ mod hash;
 
 mod sign;
 
+mod spare;
+
 mod user;
 
 mod config;
@@ -12,7 +14,9 @@ use config::Config;
 use hash::Hasher;
 use serde::Serialize;
 use sign::Signer;
+use spare::SpareAPI;
 use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool};
+use std::sync::Arc;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use user::UserAPI;
 
@@ -72,12 +76,15 @@ impl API for AppState {
     async fn login(&self, req: api::LoginRequest) -> api::LoginResponse {
         UserAPI::login(self, req).await
     }
+
     async fn register(&self, req: api::RegisterRequest) -> api::RegisterResponse {
         UserAPI::register(self, req).await
     }
+
     async fn get_user(&self, req: api::Id) -> api::User {
         UserAPI::get_user(self, req).await
     }
+
     async fn test_auth_echo(
         &self,
         req: api::TestAuthEchoRequest,
@@ -105,12 +112,52 @@ impl API for AppState {
     ) -> api::ResetPasswordAdminResponse {
         UserAPI::reset_password_admin(self, req, auth).await
     }
+
+    async fn spare_questionaire(
+        &self,
+        req: api::SpareQuestionaireRequest,
+        auth: api::Auth,
+    ) -> api::SpareQuestionaireResponse {
+        SpareAPI::spare_questionaire(self, req, auth).await
+    }
+
+    async fn spare_return(
+        &self,
+        req: api::SpareReturnRequest,
+        auth: api::Auth,
+    ) -> api::SpareReturnResponse {
+        SpareAPI::spare_return(self, req, auth).await
+    }
+
+    async fn spare_take(
+        &self,
+        req: api::SpareTakeRequest,
+        auth: api::Auth,
+    ) -> api::SpareTakeResponse {
+        SpareAPI::spare_take(self, req, auth).await
+    }
+
+    async fn spare_list(
+        &self,
+        req: api::SpareListRequest,
+        auth: api::Auth,
+    ) -> api::SpareListResponse {
+        SpareAPI::spare_list(self, req, auth).await
+    }
+	async fn spare_init(
+		&self,
+		req: api::SpareInitRequest,
+		auth: api::Auth,
+	) -> api::SpareInitResponse {
+        SpareAPI::spare_init(self, req, auth).await
+	}
+	
 }
 
 #[cfg(test)]
 pub mod test {
     use super::*;
-    use api::{Auth, RevAPI, Role, TestAuthEchoRequest};
+    use api::*;
     use axum::{
         body::Body,
         http::{self, Request, StatusCode},
