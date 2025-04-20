@@ -175,28 +175,16 @@ mod test {
     use super::*;
     use crate::app::test::TestApp;
     use crate::app::sign::Signer;
-    use api::{
-        APICollection, Authed, Auth, Role,
-        SpareQuestionaireRequest, SpareQuestionaireResponse,
-        SpareTakeRequest, SpareTakeResponse,
-        SpareReturnRequest, SpareReturnResponse,
-        SpareListRequest, SpareListResponse,
-        Vacancy,
-    };
+    use api::*;
     use chrono::Utc;
-    use sqlx::{query, Row, SqlitePool};
+    use sqlx::{query, SqlitePool};
 
     #[sqlx::test]
     async fn test_spare_questionaire(pool: SqlitePool) {
         let app = TestApp::new(pool.clone());
-        let auth = Signer::default().sign(Auth {
-            id: 1,
-            roles: vec![Role::user],
-            signature: "".into(),
-        });
-
-        let vacancies = vec![Vacancy::Available, Vacancy::Unavailable, Vacancy::Available];
-        let req = SpareQuestionaireRequest { vacancy: vacancies.clone() };
+        let auth = Signer::default().sign(Auth { id: 1, roles: vec![Role::user], signature: "".into() });
+        let vacs = vec![Vacancy::Available, Vacancy::Unavailable, Vacancy::Available];
+        let req = SpareQuestionaireRequest { vacancy: vacs.clone() };
         let resp: SpareQuestionaireResponse = app
             .request(APICollection::spare_questionaire(Authed { auth: auth.clone(), req }))
             .await;
@@ -212,75 +200,54 @@ mod test {
         assert_eq!(rows[2].get::<bool,_>("available"), true);
     }
 
-    #[sqlx::test]
+    #[sqlx::test(fixtures("rooms"))]
     async fn test_spare_take(pool: SqlitePool) {
         let app = TestApp::new(pool.clone());
-        query("INSERT INTO rooms (name) VALUES (?)")
-            .bind("R").execute(&pool).await.unwrap();
         let week = (Utc::now().timestamp() / 604_800) as i64;
-        query("INSERT INTO spares (room_id, stamp, taken_at, week) VALUES (?, ?, ?, ?)")
-            .bind(1i64).bind(0i64).bind(0i64).bind(week)
-            .execute(&pool).await.unwrap();
+        query("INSERT INTO spares (room_id, stamp, taken_at, week) VALUES (1, 0, 0, ?)")
+            .bind(week)
+            .execute(&pool)
+            .await
+            .unwrap();
 
-        let auth = Signer::default().sign(Auth {
-            id: 42,
-            roles: vec![Role::user],
-            signature: "".into(),
-        });
+        let auth = Signer::default().sign(Auth { id: 42, roles: vec![Role::user], signature: "".into() });
         let _: SpareTakeResponse = app
-            .request(APICollection::spare_take(Authed {
-                auth: auth.clone(),
-                req: SpareTakeRequest { id: 1 },
-            }))
+            .request(APICollection::spare_take(Authed { auth: auth.clone(), req: SpareTakeRequest { id: 1 } }))
             .await;
 
         let rec = query("SELECT assignee, returned_at FROM spares WHERE id = 1")
-            .fetch_one(&pool).await.unwrap();
+            .fetch_one(&pool)
+            .await
+            .unwrap();
         assert_eq!(rec.get::<Option<i64>,_>("assignee"), Some(42));
         assert!(rec.get::<Option<i64>,_>("returned_at").is_none());
     }
 
-    #[sqlx::test]
+    #[sqlx::test(fixtures("rooms"))]
     async fn test_spare_return(pool: SqlitePool) {
         let app = TestApp::new(pool.clone());
-        query("INSERT INTO rooms (name) VALUES (?)")
-            .bind("R").execute(&pool).await.unwrap();
         let week = (Utc::now().timestamp() / 604_800) as i64;
-        query("INSERT INTO spares (room_id, stamp, taken_at, week) VALUES (?, ?, ?, ?)")
-            .bind(1i64).bind(0i64).bind(0i64).bind(week)
-            .execute(&pool).await.unwrap();
+        query("INSERT INTO spares (room_id, stamp, taken_at, week) VALUES (1, 0, 0, ?)")
+            .bind(week)
+            .execute(&pool)
+            .await
+            .unwrap();
 
-        let auth = Signer::default().sign(Auth {
-            id: 7,
-            roles: vec![Role::user],
-            signature: "".into(),
-        });
+        let auth = Signer::default().sign(Auth { id: 7, roles: vec![Role::user], signature: "".into() });
         let _: SpareReturnResponse = app
-            .request(APICollection::spare_return(Authed {
-                auth: auth.clone(),
-                req: SpareReturnRequest { id: 1 },
-            }))
+            .request(APICollection::spare_return(Authed { auth: auth.clone(), req: SpareReturnRequest { id: 1 } }))
             .await;
 
         let rec = query("SELECT returned_at FROM spares WHERE id = 1")
-            .fetch_one(&pool).await.unwrap();
+            .fetch_one(&pool)
+            .await
+            .unwrap();
         assert!(rec.get::<Option<i64>,_>("returned_at").is_some());
     }
 
-    #[sqlx::test]
+    #[sqlx::test(fixtures("rooms_xy", "spares_list"))]
     async fn test_spare_list(pool: SqlitePool) {
         let app = TestApp::new(pool.clone());
-        query("INSERT INTO rooms (name) VALUES (?), (?)")
-            .bind("X").bind("Y")
-            .execute(&pool).await.unwrap();
-        let week = (Utc::now().timestamp() / 604_800) as i64;
-        query(
-            "INSERT INTO spares (room_id, stamp, taken_at, returned_at, week)
-             VALUES (?, ?, ?, ?, ?)"
-        )
-        .bind(2i64).bind(5i64).bind(10i64).bind(20i64).bind(week)
-        .execute(&pool).await.unwrap();
-
         let auth = Signer::default().sign(Auth {
             id: 3,
             roles: vec![Role::user],
@@ -289,11 +256,14 @@ mod test {
         let list: SpareListResponse = app
             .request(APICollection::spare_list(Authed {
                 auth: auth.clone(),
-                req: SpareListRequest::Schedule,
+                req:  SpareListRequest::Week(0),
             }))
             .await;
 
-        assert_eq!(list.rooms, vec!["X".to_string(), "Y".to_string()]);
+        assert_eq!(
+            list.rooms,
+            vec![String::from("X"), String::from("Y")]
+        );
         assert_eq!(list.spares.len(), 1);
         let sp = &list.spares[0];
         assert_eq!(sp.id, 1);
