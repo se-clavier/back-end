@@ -1,5 +1,9 @@
 use super::AppState;
-use api::*;
+use api::{Auth, SpareInitRequest, SpareInitResponse, SpareListRequest, SpareListResponse};
+use api::{
+    Room, Spare, SpareQuestionaireRequest, SpareQuestionaireResponse, SpareReturnRequest,
+    SpareReturnResponse, SpareTakeRequest, SpareTakeResponse, User, Vacancy,
+};
 use chrono::Utc;
 use sqlx::{query, Row};
 
@@ -90,7 +94,6 @@ impl SpareAPI for AppState {
     }
 
     async fn spare_list(&self, req: SpareListRequest, _auth: Auth) -> SpareListResponse {
-        // 1. 读取所有房间名（Room = String）
         let rooms: Vec<Room> = query("SELECT name FROM rooms ORDER BY id")
             .fetch_all(&self.database_pool)
             .await
@@ -99,17 +102,14 @@ impl SpareAPI for AppState {
             .map(|row| row.get::<String, _>("name"))
             .collect();
 
-        // 2. 计算要查询的周号（每周 604800 秒）
         let week_no: u64 = match req {
             SpareListRequest::Schedule => (Utc::now().timestamp() as u64) / 604_800,
             SpareListRequest::Week(ts_str) => {
-                // ts_str 是 String，需要先 parse
                 let ts = ts_str.parse::<u64>().unwrap_or(0);
                 ts / 604_800
             }
         };
 
-        // 3. 从 spares 表中取数据，并 JOIN 房间和用户表
         let rows = query(
             r#"
 			SELECT
@@ -133,7 +133,6 @@ impl SpareAPI for AppState {
         .await
         .unwrap();
 
-        // 4. 映射到 api::Spare，注意将数值字段转成 String
         let spares: Vec<Spare> = rows
             .into_iter()
             .map(|row| {
@@ -165,7 +164,6 @@ impl SpareAPI for AppState {
         SpareListResponse { rooms, spares }
     }
     async fn spare_init(&self, req: SpareInitRequest, _auth: Auth) -> SpareInitResponse {
-        // 1. 删除旧的 spares 并重置自增
         query("DELETE FROM spares")
             .execute(&self.database_pool)
             .await
@@ -175,7 +173,6 @@ impl SpareAPI for AppState {
             .await
             .unwrap();
 
-        // 2. 删除旧的 rooms 并重置自增
         query("DELETE FROM rooms")
             .execute(&self.database_pool)
             .await
@@ -185,7 +182,6 @@ impl SpareAPI for AppState {
             .await
             .unwrap();
 
-        // 3. 重新插入 rooms（ID 会依次从 1 开始）
         for room in &req.rooms {
             query("INSERT INTO rooms (name) VALUES (?)")
                 .bind(room)
@@ -194,7 +190,6 @@ impl SpareAPI for AppState {
                 .unwrap();
         }
 
-        // 4. 重新插入 spares，room_id = req.rooms 中的索引 + 1
         for spare in &req.spares {
             let idx = req
                 .rooms
@@ -335,7 +330,6 @@ mod test {
             signature: "".into(),
         });
 
-        // 注意：Week 接收 String
         let list: SpareListResponse = app
             .request(APICollection::spare_list(Authed {
                 auth: auth.clone(),
@@ -343,14 +337,12 @@ mod test {
             }))
             .await;
 
-        // rooms 仍然是 Vec<String>
         assert_eq!(list.rooms, vec![String::from("X"), String::from("Y")]);
 
         assert_eq!(list.spares.len(), 1);
         let sp = &list.spares[0];
         assert_eq!(sp.id, 1);
         assert_eq!(sp.stamp, 5);
-        // week / begin_time / end_time 现在是 String
         assert_eq!(sp.week, "0".to_string());
         assert_eq!(sp.begin_time, "10".to_string());
         assert_eq!(sp.end_time, "20".to_string());
@@ -369,13 +361,16 @@ mod test {
 
         let rooms = vec!["A".to_string(), "B".to_string()];
         let sp = Spare {
-            id:         0,
-            stamp:      100,
-            week:       "2".to_string(),
+            id: 0,
+            stamp: 100,
+            week: "2".to_string(),
             begin_time: "15".to_string(),
-            end_time:   "25".to_string(),
-            room:       "B".to_string(),
-            assignee:   Some(User { id: 42, username: "u1".to_string() }),
+            end_time: "25".to_string(),
+            room: "B".to_string(),
+            assignee: Some(User {
+                id: 42,
+                username: "u1".to_string(),
+            }),
         };
         let req = SpareInitRequest {
             rooms: rooms.clone(),
@@ -388,8 +383,6 @@ mod test {
             }))
             .await;
         assert_eq!(resp, SpareInitResponse::Success);
-
-        // 验证 rooms
         let got_rooms: Vec<String> = query("SELECT name FROM rooms ORDER BY id")
             .fetch_all(&pool)
             .await
@@ -398,8 +391,6 @@ mod test {
             .map(|r| r.get::<String, _>("name"))
             .collect();
         assert_eq!(got_rooms, rooms);
-
-        // 验证 spares，CAST week AS TEXT
         let row = query(
             r#"
         SELECT
@@ -416,7 +407,6 @@ mod test {
         .fetch_one(&pool)
         .await
         .unwrap();
-
         assert_eq!(row.get::<String, _>("room"), "B");
         assert_eq!(row.get::<i64, _>("stamp"), 100);
         assert_eq!(row.get::<i64, _>("taken_at"), 15);
