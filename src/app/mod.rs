@@ -144,12 +144,20 @@ impl API for AppState {
     ) -> api::SpareListResponse {
         SpareAPI::spare_list(self, req, auth).await
     }
+	async fn spare_init(
+		&self,
+		req: api::SpareInitRequest,
+		auth: api::Auth,
+	) -> api::SpareInitResponse {
+        SpareAPI::spare_init(self, req, auth).await
+	}
+	
 }
 
 #[cfg(test)]
 pub mod test {
     use super::*;
-    use api::{Auth, RevAPI, Role, TestAuthEchoRequest};
+    use api::*;
     use axum::{
         body::Body,
         http::{self, Request, StatusCode},
