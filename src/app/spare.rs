@@ -413,4 +413,37 @@ mod test {
         assert_eq!(row.get::<String, _>("week"), "2");
         assert_eq!(row.get::<Option<i64>, _>("assignee"), Some(42));
     }
+	#[sqlx::test(fixtures("rooms_xy", "spares_list"))]
+    async fn test_spare_list_schedule(pool: SqlitePool) {
+        let app = TestApp::new(pool.clone());
+        let auth = Signer::default().sign(Auth {
+            id:        3,
+            roles:     vec![Role::user],
+            signature: "".into(),
+        });
+        let list_week: SpareListResponse = app
+            .request(APICollection::spare_list(Authed {
+                auth: auth.clone(),
+                req:  SpareListRequest::Week("0".into()),
+            }))
+            .await;
+        let list_sched: SpareListResponse = app
+            .request(APICollection::spare_list(Authed {
+                auth,
+                req:  SpareListRequest::Schedule,
+            }))
+            .await;
+
+        assert_eq!(list_sched.rooms, list_week.rooms);
+        assert_eq!(list_sched.spares.len(), list_week.spares.len());
+        for (a, b) in list_sched.spares.iter().zip(list_week.spares.iter()) {
+            assert_eq!(a.id,   b.id);
+            assert_eq!(a.stamp,b.stamp);
+            assert_eq!(a.week, b.week);
+            assert_eq!(a.begin_time, b.begin_time);
+            assert_eq!(a.end_time,   b.end_time);
+            assert_eq!(a.room, b.room);
+            assert_eq!(a.assignee, b.assignee);
+        }
+    }
 }
