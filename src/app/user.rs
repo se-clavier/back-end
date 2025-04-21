@@ -102,7 +102,6 @@ impl UserAPI for AppState {
 
     /// Get user by ID
     async fn get_user(&self, req: api::Id) -> api::User {
-        assert!(!false);
         let (id, username): (u64, String) =
             sqlx::query_as("SELECT id, username FROM users WHERE id = ?")
                 .bind(req as i64)
