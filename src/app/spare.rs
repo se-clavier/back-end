@@ -39,7 +39,8 @@ impl SpareAPI for AppState {
         .unwrap();
 
         if res.rows_affected() == 0 {
-            tracing::warn!("spare_take: no unassigned spare with id {}", req.id);
+            tracing::error!("spare_take: no unassigned spare with id {}", req.id);
+            panic!("spare_take: no unassigned spare with id {}", req.id);
         }
         SpareTakeResponse {}
     }
@@ -58,11 +59,12 @@ impl SpareAPI for AppState {
         .unwrap();
 
         if res.rows_affected() == 0 {
-            tracing::warn!(
+            tracing::error!(
                 "spare_return: no spare with id {} assigned to user {}",
                 req.id,
                 auth.id
             );
+            panic!("spare_take: no unassigned spare with id {}", req.id);
         }
         SpareReturnResponse {}
     }
@@ -84,7 +86,7 @@ impl SpareAPI for AppState {
                   s.stamp                  AS stamp,
                   s.week                   AS week,
                   s.begin_at               AS begin_at,
-                  COALESCE(s.end_at, '')   AS end_at,
+                  s.end_at                 AS end_at,
                   r.name                   AS room,
                   s.assignee               AS assignee_id,
                   u.username               AS username
@@ -173,22 +175,24 @@ impl SpareAPI for AppState {
             let room_id = (req.rooms.iter().position(|r| r == &spare.room).unwrap() + 1) as i64;
 
             let assignee = spare.assignee.as_ref().map(|u| u.id as i64);
-            query(
-                r#"
-                INSERT INTO spares
-                 (room_id, stamp, begin_at, end_at, week, assignee)
-                 VALUES (?, ?, ?, ?, ?, ?)
-                 "#,
-            )
-            .bind(room_id)
-            .bind(spare.stamp as i64)
-            .bind(&spare.begin_time)
-            .bind(&spare.end_time)
-            .bind(&spare.week)
-            .bind(assignee)
-            .execute(&self.database_pool)
-            .await
-            .unwrap();
+            for week in &req.weeks {
+                query(
+                    r#"
+                    INSERT INTO spares
+                     (room_id, stamp, begin_at, end_at, week, assignee)
+                     VALUES (?, ?, ?, ?, ?, ?)
+                     "#,
+                )
+                .bind(room_id)
+                .bind(spare.stamp as i64)
+                .bind(&spare.begin_time)
+                .bind(&spare.end_time)
+                .bind(week)
+                .bind(assignee)
+                .execute(&self.database_pool)
+                .await
+                .unwrap();
+            }
         }
 
         SpareInitResponse::Success
@@ -345,7 +349,7 @@ mod test {
             Spare {
                 id: 2,
                 stamp: 0,
-                week: String::from("test_week2"),
+                week: String::from("test_week1"),
                 begin_time: String::from("test_begin2"),
                 end_time: String::from("test_end2"),
                 room: String::from("test_room1"),
@@ -359,6 +363,7 @@ mod test {
         assert_eq!(
             app.spare_init(
                 SpareInitRequest {
+                    weeks: vec![String::from("test_week1")],
                     rooms: rooms.clone(),
                     spares: spares.clone()
                 },
@@ -367,7 +372,7 @@ mod test {
             .await,
             SpareInitResponse::Success
         );
-        
+
         assert_eq!(
             app.spare_list(SpareListRequest::Schedule, auth).await,
             SpareListResponse { rooms, spares }
