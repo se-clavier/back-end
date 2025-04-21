@@ -16,7 +16,6 @@ use serde::Serialize;
 use sign::Signer;
 use spare::SpareAPI;
 use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool};
-use std::sync::Arc;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use user::UserAPI;
 
@@ -144,14 +143,13 @@ impl API for AppState {
     ) -> api::SpareListResponse {
         SpareAPI::spare_list(self, req, auth).await
     }
-	async fn spare_init(
-		&self,
-		req: api::SpareInitRequest,
-		auth: api::Auth,
-	) -> api::SpareInitResponse {
+    async fn spare_init(
+        &self,
+        req: api::SpareInitRequest,
+        auth: api::Auth,
+    ) -> api::SpareInitResponse {
         SpareAPI::spare_init(self, req, auth).await
-	}
-	
+    }
 }
 
 #[cfg(test)]
@@ -165,9 +163,9 @@ pub mod test {
     };
     use http_body_util::BodyExt;
     use serde::de::DeserializeOwned;
-    use tracing::subscriber::DefaultGuard;
     use std::{cell::RefCell, fmt::Debug};
     use tower::{Service, ServiceExt};
+    use tracing::subscriber::DefaultGuard;
     use tracing_subscriber::util::SubscriberInitExt;
 
     #[allow(unused)]
