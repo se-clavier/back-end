@@ -26,8 +26,7 @@ impl SpareAPI for AppState {
         req: SpareQuestionaireRequest,
         _auth: Auth,
     ) -> SpareQuestionaireResponse {
-        // use ISO 8601 string instead of timestamp
-        let submitted_at_s = Utc::now().to_string();
+        let submitted_at_s = Utc::now().to_rfc3339();
         for vacancy in req.vacancy {
             let available = matches!(vacancy, Vacancy::Available);
             query("INSERT INTO vacancies (available, submitted_at) VALUES (?, ?)")
@@ -41,8 +40,7 @@ impl SpareAPI for AppState {
     }
 
     async fn spare_take(&self, req: SpareTakeRequest, auth: Auth) -> SpareTakeResponse {
-        // use ISO 8601 string instead of timestamp
-        let now_s = Utc::now().to_string();
+        let now_s = Utc::now().to_rfc3339();
         let res = query(
             "UPDATE spares \
              SET assignee = ?, \
@@ -64,7 +62,7 @@ impl SpareAPI for AppState {
 
     async fn spare_return(&self, req: SpareReturnRequest, _auth: Auth) -> SpareReturnResponse {
         // use ISO 8601 string instead of timestamp
-        let now_s = Utc::now().to_string();
+        let now_s = Utc::now().to_rfc3339();
         let res = query(
             "UPDATE spares \
              SET returned_at = ? \
@@ -81,67 +79,88 @@ impl SpareAPI for AppState {
         SpareReturnResponse {}
     }
 
-    async fn spare_list(&self, req: SpareListRequest, _auth: Auth) -> SpareListResponse {
-        let rooms: Vec<Room> = query("SELECT name FROM rooms ORDER BY id")
-            .fetch_all(&self.database_pool)
-            .await
-            .unwrap()
-            .into_iter()
-            .map(|row| row.get::<String, _>("name"))
-            .collect();
-
-        let week_no = match req {
-            SpareListRequest::Schedule => (Utc::now().timestamp() as u64) / 604_800,
-            SpareListRequest::Week(ts_str) => ts_str.parse::<u64>().unwrap_or(0) / 604_800,
-        };
-
-        let rows = query(
-            r#"
-            SELECT
-              s.id                        AS id,
-              s.stamp                     AS stamp,
-              s.week                      AS week,
-              s.taken_at                  AS taken_at,
-              COALESCE(s.returned_at, '') AS returned_at,
-              r.name                      AS room,
-              s.assignee                  AS assignee_id,
-              u.username                  AS username
-            FROM spares s
-            JOIN rooms r ON s.room_id = r.id
-            LEFT JOIN users u ON s.assignee = u.id
-            WHERE s.week = ?
-            ORDER BY s.id
-            "#,
-        )
-        .bind(week_no as i64)
-        .fetch_all(&self.database_pool)
-        .await
-        .unwrap();
-
-        let spares: Vec<Spare> = rows
-            .into_iter()
-            .map(|row| Spare {
-                id: row.get::<i64, _>("id") as u64,
-                stamp: row.get::<i64, _>("stamp") as u64,
-                week: row.get::<String, _>("week"),
-                begin_time: row.get::<String, _>("taken_at"),
-                end_time: row.get::<String, _>("returned_at"),
-                room: row.get::<String, _>("room"),
-                assignee: row.get::<Option<i64>, _>("assignee_id").and_then(|uid| {
-                    row.get::<Option<String>, _>("username")
-                        .map(|username| User {
-                            id: uid as u64,
-                            username,
-                        })
-                }),
-            })
-            .collect();
-
-        SpareListResponse { rooms, spares }
-    }
+    async fn spare_list(
+		&self,
+		req: SpareListRequest,
+		_auth: Auth,
+	) -> SpareListResponse {
+		let rooms: Vec<Room> = query("SELECT name FROM rooms ORDER BY id")
+			.fetch_all(&self.database_pool)
+			.await
+			.unwrap()
+			.into_iter()
+			.map(|row| row.get::<String, _>("name"))
+			.collect();
+	
+		let rows = match req {
+			SpareListRequest::Schedule => {
+				query(
+					r#"
+					SELECT
+					  s.id                        AS id,
+					  s.stamp                     AS stamp,
+					  s.week                      AS week,
+					  s.taken_at                  AS taken_at,
+					  COALESCE(s.returned_at, '') AS returned_at,
+					  r.name                      AS room,
+					  s.assignee                  AS assignee_id,
+					  u.username                  AS username
+					FROM spares s
+					JOIN rooms r   ON s.room_id  = r.id
+					LEFT JOIN users u ON s.assignee = u.id
+					ORDER BY s.id
+					"#
+				)
+				.fetch_all(&self.database_pool)
+				.await
+				.unwrap()
+			}
+			SpareListRequest::Week(ts_str) => {
+				query(
+					r#"
+					SELECT
+					  s.id                        AS id,
+					  s.stamp                     AS stamp,
+					  s.week                      AS week,
+					  s.taken_at                  AS taken_at,
+					  COALESCE(s.returned_at, '') AS returned_at,
+					  r.name                      AS room,
+					  s.assignee                  AS assignee_id,
+					  u.username                  AS username
+					FROM spares s
+					JOIN rooms r   ON s.room_id  = r.id
+					LEFT JOIN users u ON s.assignee = u.id
+					WHERE s.week = ?
+					ORDER BY s.id
+					"#
+				)
+				.bind(ts_str)
+				.fetch_all(&self.database_pool)
+				.await
+				.unwrap()
+			}
+		};
+	
+		let spares: Vec<Spare> = rows.into_iter()
+			.map(|row| Spare {
+				id:         row.get::<i64, _>("id")        as u64,
+				stamp:      row.get::<i64, _>("stamp")     as u64,
+				week:       row.get::<String, _>("week"),
+				begin_time: row.get::<String, _>("taken_at"),
+				end_time:   row.get::<String, _>("returned_at"),
+				room:       row.get::<String, _>("room"),
+				assignee:   row.get::<Option<i64>, _>("assignee_id")
+								.and_then(|uid| {
+									row.get::<Option<String>, _>("username")
+									   .map(|username| User { id: uid as u64, username })
+								}),
+			})
+			.collect();
+	
+		SpareListResponse { rooms, spares }
+	}
 
     async fn spare_init(&self, req: SpareInitRequest, _auth: Auth) -> SpareInitResponse {
-        // reset auto-increment
         query("DELETE FROM spares")
             .execute(&self.database_pool)
             .await
@@ -239,7 +258,6 @@ mod test {
     #[sqlx::test(fixtures("rooms"))]
     async fn test_spare_take(pool: SqlitePool) {
         let app = TestApp::new(pool.clone());
-        // taken_at and week are TEXT, but we can insert as integer and let SQLite cast
         let week = (Utc::now().timestamp() / 604_800) as i64;
         query("INSERT INTO spares (room_id, stamp, taken_at, week) VALUES (1, 0, ?, ?)")
             .bind(Utc::now().timestamp())
@@ -264,9 +282,7 @@ mod test {
             .fetch_one(&pool)
             .await
             .unwrap();
-        // assignee column is still INTEGER
         assert_eq!(rec.get::<Option<i64>, _>("assignee"), Some(42));
-        // returned_at is TEXT, should be NULL => None::<String>
         assert_eq!(rec.get::<Option<String>, _>("returned_at"), None);
     }
 
@@ -298,7 +314,6 @@ mod test {
             .fetch_one(&pool)
             .await
             .unwrap();
-        // returned_at was set to TEXT timestamp
         let ret: Option<String> = rec.get("returned_at");
         assert!(ret.is_some());
     }
@@ -323,7 +338,6 @@ mod test {
         let sp = &list.spares[0];
         assert_eq!(sp.id, 1);
         assert_eq!(sp.stamp, 5);
-        // week, begin_time, end_time are Strings
         assert_eq!(sp.week, "0".to_string());
         assert_eq!(sp.begin_time, "10".to_string());
         assert_eq!(sp.end_time, "20".to_string());
@@ -394,7 +408,6 @@ mod test {
 
         assert_eq!(row.get::<String, _>("room"), "B");
         assert_eq!(row.get::<i64, _>("stamp"), 100);
-        // taken_at／returned_at TEXT => read as String then parse or compare
         assert_eq!(row.get::<String, _>("taken_at"), "15");
         assert_eq!(row.get::<String, _>("returned_at"), "25");
         assert_eq!(row.get::<String, _>("week"), "2");
