@@ -376,4 +376,35 @@ mod test {
             SpareListResponse { rooms, spares }
         )
     }
+
+    use serde::Deserialize;
+    use serde_json;
+	#[derive(Deserialize)]
+    struct SpareInitWrapper {
+        content: SpareInitContent,
+    }
+    #[derive(Deserialize)]
+    struct SpareInitContent {
+        auth: Auth,
+        req: SpareInitRequest,
+    }
+
+    #[sqlx::test(fixtures("users", "spares"))]
+    async fn test_spare_speed(pool: SqlitePool) {
+        let app = TestApp::new(pool.clone());
+
+        let raw = include_str!("fixtures/spare_init_data.json");
+        let wrapper: SpareInitWrapper = serde_json::from_str(raw)
+            .expect("spare_init_data.json failed");
+        let auth = wrapper.content.auth;
+        let req = wrapper.content.req;
+
+        let resp = app.spare_init(req.clone(), auth.clone()).await;
+        assert_eq!(resp, SpareInitResponse::Success);
+
+        let list = app.spare_list(SpareListRequest::Schedule, auth.clone()).await;
+        assert_eq!(list.rooms, req.rooms);
+        assert_eq!(list.spares.len(), req.spares.len() * req.weeks.len());
+    }
+
 }
