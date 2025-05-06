@@ -1,4 +1,5 @@
 use api::{Auth, Result};
+use chrono::{DateTime, Utc};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 
@@ -39,8 +40,11 @@ impl Signer {
     }
 
     pub fn validate(&self, role: api::Role, auth: api::Auth) -> Result<Auth> {
-        let expected_sign = self.gen_sign(&auth);
-        if expected_sign != auth.signature {
+        if self.gen_sign(&auth) != auth.signature {
+            return api::Result::Unauthorized;
+        }
+        let expire: DateTime<Utc> = auth.expire.parse().unwrap();
+        if Utc::now() > expire {
             return api::Result::Unauthorized;
         }
         if auth.roles.contains(&role) {
@@ -56,6 +60,7 @@ pub mod test {
 
     use super::*;
     use api::{Auth, Result, Role};
+    use chrono::TimeDelta;
 
     #[test]
     fn test_gen_sign_consistency() {
@@ -63,6 +68,7 @@ pub mod test {
         let auth = Auth {
             id: 1,
             roles: vec![Role::admin],
+            expire: (Utc::now() + TimeDelta::days(1)).to_rfc3339(),
             signature: String::new(),
         };
         let sign1 = signer.gen_sign(&auth);
@@ -76,6 +82,7 @@ pub mod test {
         let auth = Auth {
             id: 3,
             roles: vec![Role::admin, Role::user],
+            expire: (Utc::now() + TimeDelta::days(1)).to_rfc3339(),
             signature: String::new(),
         };
         let signed_auth = signer.sign(auth);
@@ -98,6 +105,7 @@ pub mod test {
         let auth = Auth {
             id: 4,
             roles: vec![Role::user],
+            expire: (Utc::now() + TimeDelta::days(1)).to_rfc3339(),
             signature: String::new(),
         };
         let signed_auth = signer.sign(auth);

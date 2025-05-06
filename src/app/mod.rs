@@ -104,14 +104,6 @@ impl API for AppState {
         UserAPI::reset_password(self, req, auth).await
     }
 
-    async fn reset_password_admin(
-        &self,
-        req: api::ResetPasswordAdminRequest,
-        auth: api::Auth,
-    ) -> api::ResetPasswordAdminResponse {
-        UserAPI::reset_password_admin(self, req, auth).await
-    }
-
     async fn spare_questionaire(
         &self,
         req: api::SpareQuestionaireRequest,
@@ -161,6 +153,7 @@ pub mod test {
         http::{self, Request, StatusCode},
         routing::RouterIntoService,
     };
+    use chrono::{TimeDelta, Utc};
     use http_body_util::BodyExt;
     use serde::de::DeserializeOwned;
     use std::{cell::RefCell, fmt::Debug};
@@ -248,6 +241,7 @@ pub mod test {
 
         let auth = signer.sign(Auth {
             id: 1,
+            expire: (Utc::now() + TimeDelta::days(1)).to_rfc3339(),
             roles: vec![Role::user],
             signature: String::new(),
         });
@@ -269,9 +263,34 @@ pub mod test {
 
         let auth = Auth {
             id: 1,
+            expire: (Utc::now() + TimeDelta::days(1)).to_rfc3339(),
             roles: vec![Role::admin],
             signature: "bad signature".to_string(),
         };
+
+        let req = TestAuthEchoRequest {
+            data: "Hacker Comes In".to_string(),
+        };
+
+        let res = app.test_auth_echo(req, auth).await;
+
+        panic!("invalid auth check failed: {:?}", res);
+    }
+
+    #[sqlx::test]
+    #[should_panic(expected = "request failed: Unauthorized")]
+    async fn test_test_auth_echo_expired(pool: SqlitePool) {
+        // Create a new test app instance
+        let app = TestApp::new(pool);
+
+        let signer = Signer::default();
+
+        let auth = signer.sign(Auth {
+            id: 1,
+            expire: (Utc::now() + TimeDelta::days(-1)).to_rfc3339(),
+            roles: vec![Role::user],
+            signature: String::new(),
+        });
 
         let req = TestAuthEchoRequest {
             data: "Hacker Comes In".to_string(),

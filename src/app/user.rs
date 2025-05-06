@@ -1,20 +1,15 @@
 use super::AppState;
 use api::{
-    Auth, LoginRequest, LoginResponse, RegisterRequest, RegisterResponse,
-    ResetPasswordAdminRequest, ResetPasswordAdminResponse, ResetPasswordRequest,
+    Auth, LoginRequest, LoginResponse, RegisterRequest, RegisterResponse, ResetPasswordRequest,
     ResetPasswordResponse, Role,
 };
+use chrono::{TimeDelta, Utc};
 
 pub trait UserAPI {
     async fn login(&self, req: LoginRequest) -> LoginResponse;
     async fn register(&self, req: RegisterRequest) -> RegisterResponse;
     async fn get_user(&self, req: api::Id) -> api::User;
     async fn reset_password(&self, req: ResetPasswordRequest, auth: Auth) -> ResetPasswordResponse;
-    async fn reset_password_admin(
-        &self,
-        req: ResetPasswordAdminRequest,
-        auth: Auth,
-    ) -> ResetPasswordAdminResponse;
 }
 
 impl UserAPI for AppState {
@@ -58,6 +53,7 @@ impl UserAPI for AppState {
             id: user.0 as u64,
             signature: String::new(),
             roles: roles.into_iter().map(|(role,)| role).collect(),
+            expire: (Utc::now() + TimeDelta::days(1)).to_rfc3339(),
         }))
     }
 
@@ -97,6 +93,7 @@ impl UserAPI for AppState {
             id: id as u64,
             signature: String::new(),
             roles: vec![api::Role::user],
+            expire: (Utc::now() + TimeDelta::days(1)).to_rfc3339(),
         }))
     }
 
@@ -126,25 +123,6 @@ impl UserAPI for AppState {
             .unwrap();
         tracing::info!("Password of user {:?} changed", auth.id);
         ResetPasswordResponse::Success
-    }
-
-    async fn reset_password_admin(
-        &self,
-        req: ResetPasswordAdminRequest,
-        _auth: Auth,
-    ) -> ResetPasswordAdminResponse {
-        let res = sqlx::query("UPDATE users SET password = ? WHERE id = ?")
-            .bind(self.password_hasher.hash(&req.password))
-            .bind(req.id as i64)
-            .execute(&self.database_pool)
-            .await
-            .unwrap();
-        if res.rows_affected() == 0 {
-            tracing::info!("User {:?} not found", req.id);
-            return ResetPasswordAdminResponse::FailureUserNotFound;
-        }
-        tracing::info!("Password of user {:?} changed", req.id);
-        ResetPasswordAdminResponse::Success
     }
 }
 
@@ -344,69 +322,5 @@ mod test {
         assert_eq!(res, ResetPasswordResponse::Success, "reset failed");
 
         check_reset(&app, "testuser", "reset_password123", "password123").await;
-    }
-
-    #[sqlx::test(fixtures("users"))]
-    async fn test_reset_passwd_admin(pool: SqlitePool) {
-        // Create a new test app instance
-        let app = TestApp::new(pool);
-
-        let auth = match app
-            .login(LoginRequest {
-                username: String::from("testadmin"),
-                password: String::from("password123"),
-            })
-            .await
-        {
-            LoginResponse::Success(auth) => auth,
-            _ => panic!("login failed"),
-        };
-
-        let res = app
-            .reset_password_admin(
-                ResetPasswordAdminRequest {
-                    id: 1,
-                    password: String::from("reset_password123"),
-                },
-                auth,
-            )
-            .await;
-
-        assert_eq!(res, ResetPasswordAdminResponse::Success, "reset failed");
-
-        check_reset(&app, "testuser", "reset_password123", "password123").await;
-    }
-
-    #[sqlx::test(fixtures("users"))]
-    async fn test_reset_passwd_admin_not_found(pool: SqlitePool) {
-        // Create a new test app instance
-        let app = TestApp::new(pool);
-
-        let auth = match app
-            .login(LoginRequest {
-                username: String::from("testadmin"),
-                password: String::from("password123"),
-            })
-            .await
-        {
-            LoginResponse::Success(auth) => auth,
-            _ => panic!("login failed"),
-        };
-
-        let res = app
-            .reset_password_admin(
-                ResetPasswordAdminRequest {
-                    id: 404,
-                    password: String::from("reset_password123"),
-                },
-                auth,
-            )
-            .await;
-
-        assert_eq!(
-            res,
-            ResetPasswordAdminResponse::FailureUserNotFound,
-            "not found check failed"
-        );
     }
 }
