@@ -1,7 +1,7 @@
 use super::AppState;
 use api::*;
 
-use sqlx::{query, Row, Executor, QueryBuilder};
+use sqlx::{query, Executor, QueryBuilder, Row};
 
 pub trait SpareAPI {
     async fn spare_questionaire(
@@ -145,56 +145,59 @@ impl SpareAPI for AppState {
         SpareListResponse { rooms, spares }
     }
 
-	async fn spare_init(&self, req: SpareInitRequest, _auth: Auth) -> SpareInitResponse {
-		let mut tx = self.database_pool.begin().await.unwrap();
-	
-		tx.execute(query("DELETE FROM spares")).await.unwrap();
-		tx.execute(query("DELETE FROM sqlite_sequence WHERE name='spares'")).await.unwrap();
-		tx.execute(query("DELETE FROM rooms")).await.unwrap();
-		tx.execute(query("DELETE FROM sqlite_sequence WHERE name='rooms'")).await.unwrap();
-	
-		let mut rooms_qb = QueryBuilder::new("INSERT INTO rooms (name)");
-		rooms_qb.push_values(req.rooms.iter(), |mut b, room| {
-			b.push_bind(room);
-		});
-		let rooms_query = rooms_qb.build();
-		tx.execute(rooms_query).await.unwrap();
-	
-		let mut spares_qb = QueryBuilder::new(
-			"INSERT INTO spares (room_id, stamp, begin_at, end_at, week, assignee)"
-		);
-		spares_qb.push_values(
-			req.spares.iter().flat_map(|spare| {
-				let room_id = (req.rooms.iter().position(|r| r == &spare.room).unwrap() + 1) as i64;
-				let assignee = spare.assignee.as_ref().map(|u| u.id as i64);
-				req.weeks.iter().map(move |week| {
-					(
-						room_id,
-						spare.stamp as i64,
-						spare.begin_time.as_str(),
-						spare.end_time.as_str(),
-						week.as_str(),
-						assignee,
-					)
-				})
-			}),
-			|mut b, (room_id, stamp, begin_time, end_time, week, assignee)| {
-				b.push_bind(room_id)
-				 .push_bind(stamp)
-				 .push_bind(begin_time)
-				 .push_bind(end_time)
-				 .push_bind(week)
-				 .push_bind(assignee);
-			},
-		);
-		let spares_query = spares_qb.build();
-		tx.execute(spares_query).await.unwrap();
-	
-		tx.commit().await.unwrap();
-	
-		SpareInitResponse::Success
-	}
-	
+    async fn spare_init(&self, req: SpareInitRequest, _auth: Auth) -> SpareInitResponse {
+        let mut tx = self.database_pool.begin().await.unwrap();
+
+        tx.execute(query("DELETE FROM spares")).await.unwrap();
+        tx.execute(query("DELETE FROM sqlite_sequence WHERE name='spares'"))
+            .await
+            .unwrap();
+        tx.execute(query("DELETE FROM rooms")).await.unwrap();
+        tx.execute(query("DELETE FROM sqlite_sequence WHERE name='rooms'"))
+            .await
+            .unwrap();
+
+        let mut rooms_qb = QueryBuilder::new("INSERT INTO rooms (name)");
+        rooms_qb.push_values(req.rooms.iter(), |mut b, room| {
+            b.push_bind(room);
+        });
+        let rooms_query = rooms_qb.build();
+        tx.execute(rooms_query).await.unwrap();
+
+        let mut spares_qb = QueryBuilder::new(
+            "INSERT INTO spares (room_id, stamp, begin_at, end_at, week, assignee)",
+        );
+        spares_qb.push_values(
+            req.spares.iter().flat_map(|spare| {
+                let room_id = (req.rooms.iter().position(|r| r == &spare.room).unwrap() + 1) as i64;
+                let assignee = spare.assignee.as_ref().map(|u| u.id as i64);
+                req.weeks.iter().map(move |week| {
+                    (
+                        room_id,
+                        spare.stamp as i64,
+                        spare.begin_time.as_str(),
+                        spare.end_time.as_str(),
+                        week.as_str(),
+                        assignee,
+                    )
+                })
+            }),
+            |mut b, (room_id, stamp, begin_time, end_time, week, assignee)| {
+                b.push_bind(room_id)
+                    .push_bind(stamp)
+                    .push_bind(begin_time)
+                    .push_bind(end_time)
+                    .push_bind(week)
+                    .push_bind(assignee);
+            },
+        );
+        let spares_query = spares_qb.build();
+        tx.execute(spares_query).await.unwrap();
+
+        tx.commit().await.unwrap();
+
+        SpareInitResponse::Success
+    }
 }
 
 #[cfg(test)]
