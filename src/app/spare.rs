@@ -90,30 +90,13 @@ impl SpareAPI for AppState {
             .map(|row| row.get("name"))
             .collect();
 
-        let rows = match req {
-            SpareListRequest::Schedule => query(
-                r#"
-                SELECT
-                  s.id                     AS id,
-                  s.stamp                  AS stamp,
-                  s.week                   AS week,
-                  s.begin_at               AS begin_at,
-                  s.end_at                 AS end_at,
-                  r.name                   AS room,
-                  s.assignee               AS assignee_id,
-                  u.username               AS username
-                FROM spares s
-                JOIN rooms r   ON s.room_id  = r.id
-                LEFT JOIN users u ON s.assignee = u.id
-                ORDER BY s.id
-                "#,
-            )
-            .fetch_all(&mut *tx)
-            .await
-            .unwrap(),
+        let week = match req {
+            SpareListRequest::Schedule => String::from("schedule"),
+            SpareListRequest::Week(week_str) => week_str,
+        };
 
-            SpareListRequest::Week(week_str) => query(
-                r#"
+        let rows = query(
+            r#"
                 SELECT
                   s.id                     AS id,
                   s.stamp                  AS stamp,
@@ -129,12 +112,11 @@ impl SpareAPI for AppState {
                 WHERE s.week = ?
                 ORDER BY s.id
                 "#,
-            )
-            .bind(week_str)
-            .fetch_all(&self.database_pool)
-            .await
-            .unwrap(),
-        };
+        )
+        .bind(&week)
+        .fetch_all(&self.database_pool)
+        .await
+        .unwrap();
 
         let spares = rows
             .into_iter()
@@ -178,6 +160,10 @@ impl SpareAPI for AppState {
         let rooms_query = rooms_qb.build();
         tx.execute(rooms_query).await.unwrap();
 
+        let mut weeks = req.weeks;
+
+        weeks.push(String::from("schedule"));
+
         let mut spares_qb = QueryBuilder::new(
             "INSERT INTO spares (room_id, stamp, begin_at, end_at, week, assignee)",
         );
@@ -185,7 +171,7 @@ impl SpareAPI for AppState {
             req.spares.iter().flat_map(|spare| {
                 let room_id = (req.rooms.iter().position(|r| r == &spare.room).unwrap() + 1) as i64;
                 let assignee = spare.assignee.as_ref().map(|u| u.id as i64);
-                req.weeks.iter().map(move |week| {
+                weeks.iter().map(move |week| {
                     (
                         room_id,
                         spare.stamp as i64,
@@ -311,29 +297,15 @@ mod test {
         assert_eq!(list.rooms, vec![String::from("room1")]);
         assert_eq!(
             list.spares,
-            vec![
-                Spare {
-                    id: 1,
-                    stamp: 0,
-                    week: String::from("week1"),
-                    begin_time: String::from("begin1"),
-                    end_time: String::from("end1"),
-                    room: String::from("room1"),
-                    assignee: None
-                },
-                Spare {
-                    id: 2,
-                    stamp: 0,
-                    week: String::from("week2"),
-                    begin_time: String::from("begin2"),
-                    end_time: String::from("end2"),
-                    room: String::from("room1"),
-                    assignee: Some(User {
-                        id: 1,
-                        username: String::from("testuser")
-                    })
-                }
-            ]
+            vec![Spare {
+                id: 3,
+                stamp: 0,
+                week: String::from("schedule"),
+                begin_time: String::from("begin"),
+                end_time: String::from("end"),
+                room: String::from("room1"),
+                assignee: None
+            },]
         );
     }
     #[sqlx::test(fixtures("users", "spares"))]
@@ -353,18 +325,18 @@ mod test {
         let rooms = vec![String::from("test_room1")];
         let spares = vec![
             Spare {
-                id: 1,
+                id: 2,
                 stamp: 0,
-                week: String::from("test_week1"),
+                week: String::from("schedule"),
                 begin_time: String::from("test_begin1"),
                 end_time: String::from("test_end1"),
                 room: String::from("test_room1"),
                 assignee: None,
             },
             Spare {
-                id: 2,
+                id: 4,
                 stamp: 0,
-                week: String::from("test_week1"),
+                week: String::from("schedule"),
                 begin_time: String::from("test_begin2"),
                 end_time: String::from("test_end2"),
                 room: String::from("test_room1"),
