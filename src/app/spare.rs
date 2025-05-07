@@ -26,6 +26,8 @@ impl SpareAPI for AppState {
     }
 
     async fn spare_take(&self, req: SpareTakeRequest, auth: Auth) -> SpareTakeResponse {
+        let mut tx = self.database_pool.begin().await.unwrap();
+
         let res = query(
             "UPDATE spares
                 SET assignee = ?
@@ -34,7 +36,7 @@ impl SpareAPI for AppState {
         )
         .bind(auth.id as i64)
         .bind(req.id as i64)
-        .execute(&self.database_pool)
+        .execute(&mut *tx)
         .await
         .unwrap();
 
@@ -42,10 +44,15 @@ impl SpareAPI for AppState {
             tracing::error!("spare_take: no unassigned spare with id {}", req.id);
             panic!("spare_take: no unassigned spare with id {}", req.id);
         }
+
+        tx.commit().await.unwrap();
+
         SpareTakeResponse {}
     }
 
     async fn spare_return(&self, req: SpareReturnRequest, auth: Auth) -> SpareReturnResponse {
+        let mut tx = self.database_pool.begin().await.unwrap();
+
         let res = query(
             "UPDATE spares
                 SET assignee = NULL
@@ -54,7 +61,7 @@ impl SpareAPI for AppState {
         )
         .bind(req.id as i64)
         .bind(auth.id as i64)
-        .execute(&self.database_pool)
+        .execute(&mut *tx)
         .await
         .unwrap();
 
@@ -66,12 +73,17 @@ impl SpareAPI for AppState {
             );
             panic!("spare_take: no unassigned spare with id {}", req.id);
         }
+
+        tx.commit().await.unwrap();
+
         SpareReturnResponse {}
     }
 
     async fn spare_list(&self, req: SpareListRequest, _auth: Auth) -> SpareListResponse {
+        let mut tx = self.database_pool.begin().await.unwrap();
+
         let rooms: Vec<Room> = query("SELECT name FROM rooms ORDER BY id")
-            .fetch_all(&self.database_pool)
+            .fetch_all(&mut *tx)
             .await
             .unwrap()
             .into_iter()
@@ -96,7 +108,7 @@ impl SpareAPI for AppState {
                 ORDER BY s.id
                 "#,
             )
-            .fetch_all(&self.database_pool)
+            .fetch_all(&mut *tx)
             .await
             .unwrap(),
 
@@ -141,6 +153,8 @@ impl SpareAPI for AppState {
                 }),
             })
             .collect();
+
+        tx.commit().await.unwrap();
 
         SpareListResponse { rooms, spares }
     }

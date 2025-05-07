@@ -16,10 +16,12 @@ impl UserAPI for AppState {
     /// login a user
     /// This function checks if the username and password are correct
     async fn login(&self, req: LoginRequest) -> LoginResponse {
+        let mut tx = self.database_pool.begin().await.unwrap();
+
         let user: (i64, String, String) =
             match sqlx::query_as("SELECT id, username, password FROM users WHERE username = ?")
                 .bind(req.username)
-                .fetch_one(&self.database_pool)
+                .fetch_one(&mut *tx)
                 .await
             {
                 Ok(user) => user,
@@ -39,9 +41,11 @@ impl UserAPI for AppState {
         let roles: Vec<(Role,)> =
             sqlx::query_as("SELECT role_type FROM user_roles WHERE user_id = ?")
                 .bind(user.0)
-                .fetch_all(&self.database_pool)
+                .fetch_all(&mut *tx)
                 .await
                 .unwrap();
+
+        tx.commit().await.unwrap();
 
         tracing::info!(
             "User {:?} logged in with roles {:?}",
@@ -59,10 +63,12 @@ impl UserAPI for AppState {
 
     /// Register a new user
     async fn register(&self, req: RegisterRequest) -> RegisterResponse {
+        let mut tx = self.database_pool.begin().await.unwrap();
+
         // Check if the username is already taken
         if sqlx::query("SELECT id FROM users WHERE username = ?")
             .bind(&req.username)
-            .fetch_optional(&self.database_pool)
+            .fetch_optional(&mut *tx)
             .await
             .unwrap()
             .is_some()
@@ -74,7 +80,7 @@ impl UserAPI for AppState {
         let id = sqlx::query("INSERT INTO users (username, password) VALUES (?, ?)")
             .bind(&req.username)
             .bind(self.password_hasher.hash(&req.password))
-            .execute(&self.database_pool)
+            .execute(&mut *tx)
             .await
             .unwrap()
             .last_insert_rowid();
@@ -83,9 +89,11 @@ impl UserAPI for AppState {
         sqlx::query("INSERT INTO user_roles (user_id, role_type) VALUES (?, ?)")
             .bind(id)
             .bind(Role::user)
-            .execute(&self.database_pool)
+            .execute(&mut *tx)
             .await
             .unwrap();
+
+        tx.commit().await.unwrap();
 
         tracing::info!("User {:?} registered", (id, req.username));
 
@@ -99,13 +107,18 @@ impl UserAPI for AppState {
 
     /// Get user by ID
     async fn get_user(&self, req: api::Id) -> api::User {
+        let mut tx = self.database_pool.begin().await.unwrap();
+
         let (id, username): (u64, String) =
             sqlx::query_as("SELECT id, username FROM users WHERE id = ?")
                 .bind(req as i64)
-                .fetch_optional(&self.database_pool)
+                .fetch_optional(&mut *tx)
                 .await
                 .unwrap()
                 .expect("User not found");
+
+        tx.commit().await.unwrap();
+
         tracing::info!("User {:?} fetched", (id, &username));
         api::User { id, username }
     }
@@ -115,12 +128,17 @@ impl UserAPI for AppState {
         req: ResetPasswordRequest,
         auth: api::Auth,
     ) -> ResetPasswordResponse {
+        let mut tx = self.database_pool.begin().await.unwrap();
+
         sqlx::query("UPDATE users SET password = ? WHERE id = ?")
             .bind(self.password_hasher.hash(&req.password))
             .bind(auth.id as i64)
-            .execute(&self.database_pool)
+            .execute(&mut *tx)
             .await
             .unwrap();
+
+        tx.commit().await.unwrap();
+
         tracing::info!("Password of user {:?} changed", auth.id);
         ResetPasswordResponse::Success
     }
@@ -267,33 +285,6 @@ mod test {
 
         let _res: api::User = app.get_user(404).await;
     }
-
-    async fn check_reset(app: &TestApp, username: &str, password: &str, chk_password: &str) {
-        match app
-            .login(LoginRequest {
-                username: String::from(username),
-                password: String::from(password),
-            })
-            .await
-        {
-            LoginResponse::Success(auth) => {
-                assert_eq!(auth.id, 1);
-                assert_eq!(auth.roles, vec![Role::user]);
-                app.check_auth(auth).await;
-            }
-            _ => panic!("reset login failed"),
-        }
-
-        let res = app
-            .login(LoginRequest {
-                username: String::from(username),
-                password: String::from(chk_password),
-            })
-            .await;
-
-        assert_eq!(res, LoginResponse::FailureIncorrect, "reset check failed");
-    }
-
     #[sqlx::test(fixtures("users"))]
     async fn test_reset_passwd(pool: SqlitePool) {
         // Create a new test app instance
@@ -321,6 +312,7 @@ mod test {
 
         assert_eq!(res, ResetPasswordResponse::Success, "reset failed");
 
-        check_reset(&app, "testuser", "reset_password123", "password123").await;
+        app.check_reset("testuser", "reset_password123", "password123")
+            .await;
     }
 }

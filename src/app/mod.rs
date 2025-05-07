@@ -1,13 +1,11 @@
+mod admin;
+mod config;
 mod hash;
-
 mod sign;
-
 mod spare;
-
 mod user;
 
-mod config;
-
+use admin::AdminAPI;
 use api::{APICollection, API};
 use axum::{extract::State, response::Response, routing::post, Json, Router};
 use config::Config;
@@ -142,6 +140,17 @@ impl API for AppState {
     ) -> api::SpareInitResponse {
         SpareAPI::spare_init(self, req, auth).await
     }
+    async fn user_set(&self, req: api::UserSetRequest, auth: api::Auth) -> api::UserSetResponse {
+        AdminAPI::user_set(self, req, auth).await
+    }
+
+    async fn users_list(
+        &self,
+        req: api::UsersListRequest,
+        auth: api::Auth,
+    ) -> api::UsersListResponse {
+        AdminAPI::users_list(self, req, auth).await
+    }
 }
 
 #[cfg(test)]
@@ -191,6 +200,32 @@ pub mod test {
                 )
                 .await;
             assert_eq!(res.data, "Check Validate", "Check Auth Failed");
+        }
+
+        pub async fn check_reset(&self, username: &str, password: &str, chk_password: &str) {
+            match self
+                .login(LoginRequest {
+                    username: String::from(username),
+                    password: String::from(password),
+                })
+                .await
+            {
+                LoginResponse::Success(auth) => {
+                    assert_eq!(auth.id, 1);
+                    assert_eq!(auth.roles, vec![Role::user]);
+                    self.check_auth(auth).await;
+                }
+                _ => panic!("reset login failed"),
+            }
+
+            let res = self
+                .login(LoginRequest {
+                    username: String::from(username),
+                    password: String::from(chk_password),
+                })
+                .await;
+
+            assert_eq!(res, LoginResponse::FailureIncorrect, "reset check failed");
         }
     }
 
