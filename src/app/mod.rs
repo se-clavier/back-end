@@ -4,6 +4,7 @@ mod hash;
 mod sign;
 mod spare;
 mod user;
+mod algorithm;
 
 use admin::AdminAPI;
 use api::{APICollection, API};
