@@ -19,10 +19,44 @@ pub trait SpareAPI {
 impl SpareAPI for AppState {
     async fn spare_questionaire(
         &self,
-        _req: SpareQuestionaireRequest,
-        _auth: Auth,
+        req: SpareQuestionaireRequest,
+        auth: Auth,
     ) -> SpareQuestionaireResponse {
-        todo!();
+        let mut tx = self.database_pool.begin().await.unwrap();
+
+        query(
+            "DELETE FROM availables
+                WHERE user_id = ?",
+        )
+        .bind(auth.id as i64)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+
+        QueryBuilder::new("INSERT INTO availables (user_id, stamp)")
+            .push_values(
+                req.vacancy
+                    .into_iter()
+                    .enumerate()
+                    .filter_map(|(stamp, vacancy)| {
+                        match vacancy {
+                            Vacancy::Available => Some(stamp),
+                            Vacancy::Unavailable => None,
+                        }
+                    }),
+                |mut b, stamp| {
+                    b.push_bind(auth.id as i64);
+                    b.push_bind(stamp as i64);
+                },
+            )
+            .build()
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+
+        tx.commit().await.unwrap();
+
+        SpareQuestionaireResponse::Success
     }
 
     async fn spare_take(&self, req: SpareTakeRequest, auth: Auth) -> SpareTakeResponse {
@@ -152,6 +186,10 @@ impl SpareAPI for AppState {
         tx.execute(query("DELETE FROM sqlite_sequence WHERE name='rooms'"))
             .await
             .unwrap();
+        tx.execute(query("DELETE FROM availables")).await.unwrap();
+        tx.execute(query("DELETE FROM sqlite_sequence WHERE name='availables'"))
+            .await
+            .unwrap();
 
         let mut rooms_qb = QueryBuilder::new("INSERT INTO rooms (name)");
         rooms_qb.push_values(req.rooms.iter(), |mut b, room| {
@@ -206,6 +244,31 @@ mod test {
     use crate::app::test::TestApp;
 
     use sqlx::SqlitePool;
+
+    #[sqlx::test(fixtures("users"))]
+    async fn test_spare_questionaire(pool: SqlitePool) {
+        let app = TestApp::new(pool);
+
+        let auth = match app
+            .login(LoginRequest {
+                username: String::from("testuser"),
+                password: String::from("password123"),
+            })
+            .await
+        {
+            LoginResponse::Success(auth) => auth,
+            _ => panic!("login failed"),
+        };
+
+        let _ = app
+            .spare_questionaire(
+                SpareQuestionaireRequest {
+                    vacancy: vec![Vacancy::Available, Vacancy::Unavailable, Vacancy::Available],
+                },
+                auth,
+            )
+            .await;
+    }
 
     #[sqlx::test(fixtures("users", "spares"))]
     async fn test_spare_take(pool: SqlitePool) {
