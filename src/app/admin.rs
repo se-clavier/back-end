@@ -22,6 +22,15 @@ impl AdminAPI for AppState {
                     .execute(&mut *tx)
                     .await
                     .unwrap();
+                sqlx::query(
+                    "UPDATE spares
+                    SET assignee = NULL
+                    WHERE assignee = ?",
+                )
+                .bind(req.user_id as i64)
+                .execute(&mut *tx)
+                .await
+                .unwrap();
                 sqlx::query("DELETE FROM users WHERE id = ?")
                     .bind(req.user_id as i64)
                     .execute(&mut *tx)
@@ -73,7 +82,7 @@ impl AdminAPI for AppState {
             })
             .collect();
         let user_roles: Vec<(u64, Role)> =
-            sqlx::query_as("SELECT user_id, role_type FROM user_roles ORDER BY user_id, role_type")
+            sqlx::query_as("SELECT user_id, role_type FROM user_roles ORDER BY user_id")
                 .fetch_all(&mut *tx)
                 .await
                 .unwrap();
@@ -132,7 +141,7 @@ mod test {
                 UserFull {
                     id: 2,
                     username: String::from("testadmin"),
-                    roles: vec![Role::admin, Role::user],
+                    roles: vec![Role::admin, Role::user, Role::terminal],
                 },
             ]
         )
@@ -173,7 +182,7 @@ mod test {
             vec![UserFull {
                 id: 2,
                 username: String::from("testadmin"),
-                roles: vec![Role::admin, Role::user],
+                roles: vec![Role::admin, Role::user, Role::terminal],
             },]
         )
     }
@@ -219,7 +228,7 @@ mod test {
                 UserFull {
                     id: 2,
                     username: String::from("testadmin"),
-                    roles: vec![Role::admin, Role::user],
+                    roles: vec![Role::admin, Role::user, Role::terminal],
                 },
             ]
         )

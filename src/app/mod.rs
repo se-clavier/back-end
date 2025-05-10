@@ -1,4 +1,5 @@
 mod admin;
+mod checkin;
 mod config;
 mod hash;
 mod sign;
@@ -8,6 +9,8 @@ mod user;
 use admin::AdminAPI;
 use api::{APICollection, API};
 use axum::{extract::State, response::Response, routing::post, Json, Router};
+use checkin::CheckinAPI;
+use chrono::{DateTime, TimeDelta, Utc};
 use config::Config;
 use hash::Hasher;
 use serde::Serialize;
@@ -20,6 +23,23 @@ use user::UserAPI;
 const DEFAULT_SECRET: &str = "mysecret";
 
 const DEFAULT_SALT: &str = "YmFzZXNhbHQ";
+
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::Type)]
+enum CheckinStatus {
+    None,
+    CheckedIn,
+    CheckedOut,
+}
+
+fn parse_week(week: String) -> DateTime<Utc> {
+    DateTime::parse_from_str((week + "-1 00:00:00 +0800").as_str(), "%G-W%V-%u %T %z")
+        .unwrap()
+        .to_utc()
+}
+
+fn parse_time_delta(duration: String) -> TimeDelta {
+    TimeDelta::from_std(iso8601::duration(&duration).unwrap().into()).unwrap()
+}
 
 #[derive(Debug, Clone)]
 /// Application state
@@ -140,16 +160,30 @@ impl API for AppState {
     ) -> api::SpareInitResponse {
         SpareAPI::spare_init(self, req, auth).await
     }
+
     async fn user_set(&self, req: api::UserSetRequest, auth: api::Auth) -> api::UserSetResponse {
         AdminAPI::user_set(self, req, auth).await
     }
-
     async fn users_list(
         &self,
         req: api::UsersListRequest,
         auth: api::Auth,
     ) -> api::UsersListResponse {
         AdminAPI::users_list(self, req, auth).await
+    }
+
+    async fn terminal_credential(
+        &self,
+        req: api::TerminalCredentialRequest,
+        auth: api::Auth,
+    ) -> api::TerminalCredentialResponse {
+        CheckinAPI::terminal_credential(self, req, auth).await
+    }
+    async fn checkin(&self, req: api::CheckinRequest, auth: api::Auth) -> api::CheckinResponse {
+        CheckinAPI::checkin(self, req, auth).await
+    }
+    async fn checkout(&self, req: api::CheckoutRequest, auth: api::Auth) -> api::CheckoutResponse {
+        CheckinAPI::checkout(self, req, auth).await
     }
 }
 
