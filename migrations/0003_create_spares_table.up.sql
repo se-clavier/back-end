@@ -7,5 +7,6 @@ CREATE TABLE IF NOT EXISTS spares (
   stamp       INTEGER    NOT NULL,    -- 一周里面的 INDEX
   begin_at    TEXT       NOT NULL,    -- 开始时间
   end_at      TEXT       NOT NULL,    -- 结束时间
-  week        TEXT       NOT NULL     -- 本条记录所属周编号
+  week        TEXT       NOT NULL,    -- 本条记录所属周编号
+  status      TEXT       NOT NULL     -- 记录签到状态
 );

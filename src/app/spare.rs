@@ -1,5 +1,9 @@
-use super::AppState;
-use api::*;
+use super::{AppState, CheckinStatus};
+use api::{
+    Auth, Room, Spare, SpareInitRequest, SpareInitResponse, SpareListRequest, SpareListResponse,
+    SpareQuestionaireRequest, SpareQuestionaireResponse, SpareReturnRequest, SpareReturnResponse,
+    SpareTakeRequest, SpareTakeResponse, User, Vacancy,
+};
 
 use sqlx::{query, Executor, QueryBuilder, Row};
 
@@ -38,11 +42,9 @@ impl SpareAPI for AppState {
                 req.vacancy
                     .into_iter()
                     .enumerate()
-                    .filter_map(|(stamp, vacancy)| {
-                        match vacancy {
-                            Vacancy::Available => Some(stamp),
-                            Vacancy::Unavailable => None,
-                        }
+                    .filter_map(|(stamp, vacancy)| match vacancy {
+                        Vacancy::Available => Some(stamp),
+                        Vacancy::Unavailable => None,
                     }),
                 |mut b, stamp| {
                     b.push_bind(auth.id as i64);
@@ -136,7 +138,7 @@ impl SpareAPI for AppState {
                   s.stamp                  AS stamp,
                   s.week                   AS week,
                   s.begin_at               AS begin_at,
-                  COALESCE(s.end_at, '')   AS end_at,
+                  s.end_at                 AS end_at,
                   r.name                   AS room,
                   s.assignee               AS assignee_id,
                   u.username               AS username
@@ -198,27 +200,37 @@ impl SpareAPI for AppState {
         let rooms_query = rooms_qb.build();
         tx.execute(rooms_query).await.unwrap();
 
-        let mut weeks = req.weeks;
-
-        weeks.push(String::from("schedule"));
-
         let mut spares_qb = QueryBuilder::new(
-            "INSERT INTO spares (room_id, stamp, begin_at, end_at, week, assignee)",
+            "INSERT INTO spares (room_id, stamp, begin_at, end_at, week, assignee, status)",
         );
+
         spares_qb.push_values(
             req.spares.iter().flat_map(|spare| {
                 let room_id = (req.rooms.iter().position(|r| r == &spare.room).unwrap() + 1) as i64;
                 let assignee = spare.assignee.as_ref().map(|u| u.id as i64);
-                weeks.iter().map(move |week| {
-                    (
-                        room_id,
-                        spare.stamp as i64,
-                        spare.begin_time.as_str(),
-                        spare.end_time.as_str(),
-                        week.as_str(),
-                        assignee,
+                req.weeks
+                    .iter()
+                    .map(move |week| {
+                        (
+                            room_id,
+                            spare.stamp as i64,
+                            spare.begin_time.as_str(),
+                            spare.end_time.as_str(),
+                            week.as_str(),
+                            assignee.clone(),
+                        )
+                    })
+                    .chain(
+                        Some((
+                            room_id,
+                            spare.stamp as i64,
+                            spare.begin_time.as_str(),
+                            spare.end_time.as_str(),
+                            "schedule",
+                            assignee.clone(),
+                        ))
+                        .into_iter(),
                     )
-                })
             }),
             |mut b, (room_id, stamp, begin_time, end_time, week, assignee)| {
                 b.push_bind(room_id)
@@ -226,7 +238,8 @@ impl SpareAPI for AppState {
                     .push_bind(begin_time)
                     .push_bind(end_time)
                     .push_bind(week)
-                    .push_bind(assignee);
+                    .push_bind(assignee)
+                    .push_bind(CheckinStatus::None);
             },
         );
         let spares_query = spares_qb.build();
@@ -243,6 +256,7 @@ mod test {
     use super::*;
     use crate::app::test::TestApp;
 
+    use api::{LoginRequest, LoginResponse, RevAPI};
     use sqlx::SqlitePool;
 
     #[sqlx::test(fixtures("users"))]
@@ -322,7 +336,7 @@ mod test {
         };
 
         let list = app
-            .spare_list(SpareListRequest::Week(String::from("week1")), auth)
+            .spare_list(SpareListRequest::Week(String::from("2000-W18")), auth)
             .await;
 
         assert_eq!(list.rooms, vec![String::from("room1")]);
@@ -331,9 +345,9 @@ mod test {
             vec![Spare {
                 id: 1,
                 stamp: 0,
-                week: String::from("week1"),
-                begin_time: String::from("begin1"),
-                end_time: String::from("end1"),
+                week: String::from("2000-W18"),
+                begin_time: String::from("P0Y0M0DT8H0M0S"),
+                end_time: String::from("P0Y0M0DT10H0M0S"),
                 room: String::from("room1"),
                 assignee: None
             }]
@@ -364,8 +378,8 @@ mod test {
                 id: 3,
                 stamp: 0,
                 week: String::from("schedule"),
-                begin_time: String::from("begin"),
-                end_time: String::from("end"),
+                begin_time: String::from("P0Y0M0DT8H0M0S"),
+                end_time: String::from("P0Y0M0DT10H0M0S"),
                 room: String::from("room1"),
                 assignee: None
             },]
