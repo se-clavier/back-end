@@ -2,7 +2,7 @@ use api::{
     Auth, Role, UserFull, UserFulls, UserSetRequest, UserSetResponse, UserSetValue,
     UsersListRequest, UsersListResponse,
 };
-use sqlx::QueryBuilder;
+use sqlx::{types::Json, QueryBuilder};
 
 use super::AppState;
 
@@ -70,32 +70,27 @@ impl AdminAPI for AppState {
     async fn users_list(&self, _req: UsersListRequest, _auth: Auth) -> UsersListResponse {
         let mut tx = self.database_pool.begin().await.unwrap();
 
-        let mut users: UserFulls = sqlx::query_as("SELECT id, username FROM users ORDER BY id")
-            .fetch_all(&mut *tx)
-            .await
-            .unwrap()
-            .into_iter()
-            .map(|(id, username): (u64, String)| UserFull {
+        let users: UserFulls = sqlx::query_as(
+            "
+            SELECT id, username,
+                json_group_array(json_object('type', user_roles.role_type)) 
+                    FROM users
+                    JOIN user_roles ON user_roles.user_id = users.id
+                    GROUP BY id
+            ",
+        )
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(
+            |(id, username, roles): (u64, String, Json<Vec<Role>>)| UserFull {
                 id,
                 username,
-                roles: Vec::new(),
-            })
-            .collect();
-        let user_roles: Vec<(u64, Role)> =
-            sqlx::query_as("SELECT user_id, role_type FROM user_roles ORDER BY user_id")
-                .fetch_all(&mut *tx)
-                .await
-                .unwrap();
-
-        let mut it = users.iter_mut();
-        let mut user = it.next().unwrap();
-
-        for (id, role) in user_roles {
-            while user.id != id {
-                user = it.next().unwrap();
-            }
-            user.roles.push(role);
-        }
+                roles: roles.as_ref().clone(),
+            },
+        )
+        .collect();
 
         tx.commit().await.unwrap();
 

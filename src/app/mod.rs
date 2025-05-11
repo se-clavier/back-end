@@ -160,6 +160,12 @@ impl API for AppState {
     ) -> api::SpareInitResponse {
         SpareAPI::spare_init(self, req, auth).await
     }
+    async fn spare_set_assignee(&self, req: api::SpareSetAssigneeRequest, auth: api::Auth) -> api::SpareSetAssigneeResponse {
+        SpareAPI::spare_set_assignee(self, req, auth).await
+    }
+    async fn spare_trigger_assign(&self, req: api::SpareAutoAssignRequest,auth: api::Auth) -> api::SpareAutoAssignResponse {
+        SpareAPI::spare_trigger_assign(self, req, auth).await
+    }
 
     async fn user_set(&self, req: api::UserSetRequest, auth: api::Auth) -> api::UserSetResponse {
         AdminAPI::user_set(self, req, auth).await
@@ -185,6 +191,7 @@ impl API for AppState {
     async fn checkout(&self, req: api::CheckoutRequest, auth: api::Auth) -> api::CheckoutResponse {
         CheckinAPI::checkout(self, req, auth).await
     }
+
 }
 
 #[cfg(test)]
