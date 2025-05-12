@@ -1,11 +1,12 @@
 use super::{AppState, CheckinStatus};
 use api::{
-    Auth, Room, Spare, SpareInitRequest, SpareInitResponse, SpareListRequest, SpareListResponse,
-    SpareQuestionaireRequest, SpareQuestionaireResponse, SpareReturnRequest, SpareReturnResponse,
-    SpareTakeRequest, SpareTakeResponse, User, Vacancy,
+    Auth, Room, Spare, SpareAutoAssignRequest, SpareAutoAssignResponse, SpareInitRequest,
+    SpareInitResponse, SpareListRequest, SpareListResponse, SpareQuestionaireRequest,
+    SpareQuestionaireResponse, SpareReturnRequest, SpareReturnResponse, SpareSetAssigneeRequest,
+    SpareSetAssigneeResponse, SpareTakeRequest, SpareTakeResponse, User, Vacancy,
 };
 
-use sqlx::{query, Executor, QueryBuilder, Row};
+use sqlx::{query, query_as, types::Json, Executor, QueryBuilder, Row};
 
 pub trait SpareAPI {
     async fn spare_questionaire(
@@ -17,9 +18,18 @@ pub trait SpareAPI {
     async fn spare_take(&self, req: SpareTakeRequest, auth: Auth) -> SpareTakeResponse;
     async fn spare_list(&self, req: SpareListRequest, auth: Auth) -> SpareListResponse;
     async fn spare_init(&self, req: SpareInitRequest, auth: Auth) -> SpareInitResponse;
+    async fn spare_set_assignee(
+        &self,
+        req: SpareSetAssigneeRequest,
+        auth: Auth,
+    ) -> SpareSetAssigneeResponse;
+    async fn spare_trigger_assign(
+        &self,
+        req: SpareAutoAssignRequest,
+        auth: Auth,
+    ) -> SpareAutoAssignResponse;
 }
 
-#[allow(unused)]
 impl SpareAPI for AppState {
     async fn spare_questionaire(
         &self,
@@ -249,6 +259,55 @@ impl SpareAPI for AppState {
 
         SpareInitResponse::Success
     }
+
+    async fn spare_set_assignee(
+        &self,
+        req: SpareSetAssigneeRequest,
+        _auth: Auth,
+    ) -> SpareSetAssigneeResponse {
+        let mut tx = self.database_pool.begin().await.unwrap();
+
+        query(
+            "UPDATE spares
+                SET assignee = ?
+              WHERE id = ?",
+        )
+        .bind(req.assignee.map(|u| u.id as i64))
+        .bind(req.id as i64)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+
+        tx.commit().await.unwrap();
+
+        SpareSetAssigneeResponse::Success
+    }
+
+    #[allow(unused)]
+    async fn spare_trigger_assign(
+        &self,
+        req: SpareAutoAssignRequest,
+        auth: Auth,
+    ) -> SpareAutoAssignResponse {
+        let mut tx = self.database_pool.begin().await.unwrap();
+        let users: Vec<_> = query_as(
+            "
+            SELECT user_id, json_group_array(stamp) FROM availables
+                GROUP BY user_id
+            ",
+        )
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|(user_id, stamps): (i64, Json<Vec<u64>>)| (user_id as u64, stamps.0))
+        .collect();
+
+        // todo!
+
+        tx.commit().await.unwrap();
+        SpareAutoAssignResponse::Success
+    }
 }
 
 #[cfg(test)]
@@ -441,5 +500,54 @@ mod test {
             app.spare_list(SpareListRequest::Schedule, auth).await,
             SpareListResponse { rooms, spares }
         )
+    }
+
+    #[sqlx::test(fixtures("users", "spares"))]
+    async fn test_spare_set_assignee(pool: SqlitePool) {
+        let app = TestApp::new(pool);
+
+        let auth = match app
+            .login(LoginRequest {
+                username: String::from("testadmin"),
+                password: String::from("password123"),
+            })
+            .await
+        {
+            LoginResponse::Success(auth) => auth,
+            _ => panic!("login failed"),
+        };
+
+        let res = app
+            .spare_set_assignee(
+                SpareSetAssigneeRequest {
+                    id: 2,
+                    assignee: None,
+                },
+                auth,
+            )
+            .await;
+
+        assert_eq!(res, SpareSetAssigneeResponse::Success);
+    }
+    #[sqlx::test(fixtures("users", "spares", "availables"))]
+    async fn test_spare_trigger_assign(pool: SqlitePool) {
+        let app = TestApp::new(pool);
+
+        let auth = match app
+            .login(LoginRequest {
+                username: String::from("testadmin"),
+                password: String::from("password123"),
+            })
+            .await
+        {
+            LoginResponse::Success(auth) => auth,
+            _ => panic!("login failed"),
+        };
+
+        let res = app
+            .spare_trigger_assign(SpareAutoAssignRequest { weeks: Vec::new() }, auth)
+            .await;
+
+        assert_eq!(res, SpareAutoAssignResponse::Success);
     }
 }
