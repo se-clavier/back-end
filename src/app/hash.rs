@@ -1,5 +1,4 @@
 use argon2::{password_hash::SaltString, Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
-
 #[derive(Debug, Clone)]
 pub struct Hasher {
     salt: SaltString,

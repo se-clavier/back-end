@@ -1,0 +1,18 @@
+   Compiling api v0.1.0 (/home/renshixin/back-end/api)
+   Compiling backend v0.1.1 (/home/renshixin/back-end)
+error: failed to run custom build command for `backend v0.1.1 (/home/renshixin/back-end)`
+
+Caused by:
+  process didn't exit successfully: `/home/renshixin/back-end/target/debug/build/backend-b7c7a75890c4f3da/build-script-build` (exit status: 1)
+  --- stdout
+  cargo:rerun-if-changed=migrations
+
+  --- stderr
+
+  error[cxxbridge]: using C++ vector by value is not supported
+     ┌─ src/app/algorithm.rs:12:9
+     │
+  12 │         stamps: CxxVector<u64>,
+     │         ^^^^^^^^^^^^^^^^^^^^^^ using C++ vector by value is not supported
+
+warning: build failed, waiting for other jobs to finish...
