@@ -13,7 +13,7 @@ use checkin::CheckinAPI;
 use chrono::{DateTime, TimeDelta, Utc};
 use config::Config;
 use hash::Hasher;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sign::Signer;
 use spare::SpareAPI;
 use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool};
@@ -24,10 +24,11 @@ const DEFAULT_SECRET: &str = "mysecret";
 
 const DEFAULT_SALT: &str = "YmFzZXNhbHQ";
 
-#[derive(Debug, Clone, PartialEq, Eq, sqlx::Type)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 enum CheckinStatus {
     None,
     CheckedIn,
+    CheckedInButLate(i64),
     CheckedOut,
 }
 
