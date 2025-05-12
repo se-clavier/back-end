@@ -3,6 +3,7 @@ use api::{
     TerminalCredentialRequest, TerminalCredentialResponse,
 };
 use chrono::{TimeDelta, Utc};
+use sqlx::types::Json;
 
 use crate::app::{parse_time_delta, parse_week, AppState, CheckinStatus};
 
@@ -23,7 +24,7 @@ impl CheckinAPI for AppState {
             _ => panic!("Invalid credential"),
         }
         let mut tx = self.database_pool.begin().await.unwrap();
-        let (status, begin_at, week): (CheckinStatus, String, String) = sqlx::query_as(
+        let (status, begin_at, week): (Json<CheckinStatus>, String, String) = sqlx::query_as(
             "SELECT status, begin_at, week from spares WHERE id = ? AND assignee = ?",
         )
         .bind(req.id as i64)
@@ -31,17 +32,24 @@ impl CheckinAPI for AppState {
         .fetch_one(&mut *tx)
         .await
         .unwrap();
-        let res = match status {
+        let res = match status.0 {
             CheckinStatus::None => {
                 let begin_at = parse_week(week) + parse_time_delta(begin_at);
                 let now = chrono::Utc::now();
                 if now + TimeDelta::minutes(30) < begin_at {
                     CheckinResponse::Early
                 } else if now > begin_at {
-                    CheckinResponse::Late((now - begin_at).num_minutes())
+                    let late = (now - begin_at).num_minutes();
+                    sqlx::query("UPDATE spares SET status = ? WHERE id = ?")
+                        .bind(Json(CheckinStatus::CheckedInButLate(late)))
+                        .bind(req.id as i64)
+                        .execute(&mut *tx)
+                        .await
+                        .unwrap();
+                    CheckinResponse::Late(late)
                 } else {
                     sqlx::query("UPDATE spares SET status = ? WHERE id = ?")
-                        .bind(CheckinStatus::CheckedIn)
+                        .bind(Json(CheckinStatus::CheckedIn))
                         .bind(req.id as i64)
                         .execute(&mut *tx)
                         .await
@@ -61,14 +69,14 @@ impl CheckinAPI for AppState {
             _ => panic!("Invalid credential"),
         }
         let mut tx = self.database_pool.begin().await.unwrap();
-        let (status, end_at, week): (CheckinStatus, String, String) =
+        let (status, end_at, week): (Json<CheckinStatus>, String, String) =
             sqlx::query_as("SELECT status, end_at, week from spares WHERE id = ? AND assignee = ?")
                 .bind(req.id as i64)
                 .bind(auth.id as i64)
                 .fetch_one(&mut *tx)
                 .await
                 .unwrap();
-        let res = match status {
+        let res = match status.0 {
             CheckinStatus::CheckedOut => CheckoutResponse::Duplicate,
             CheckinStatus::None => CheckoutResponse::NotCheckedIn,
             _ => {
@@ -80,7 +88,7 @@ impl CheckinAPI for AppState {
                     CheckoutResponse::Late
                 } else {
                     sqlx::query("UPDATE spares SET status = ? WHERE id = ?")
-                        .bind(CheckinStatus::CheckedOut)
+                        .bind(Json(CheckinStatus::CheckedOut))
                         .bind(req.id as i64)
                         .execute(&mut *tx)
                         .await

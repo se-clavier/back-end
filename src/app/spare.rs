@@ -249,7 +249,7 @@ impl SpareAPI for AppState {
                     .push_bind(end_time)
                     .push_bind(week)
                     .push_bind(assignee)
-                    .push_bind(CheckinStatus::None);
+                    .push_bind(Json(CheckinStatus::None));
             },
         );
         let spares_query = spares_qb.build();
