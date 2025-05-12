@@ -1,5 +1,5 @@
 # Use the stable version of Rust as the base image
-FROM rust:1.85-bookworm
+FROM rust:bookworm
 
 # Install the required dependencies
 RUN apt update && apt install --no-install-recommends -y racket
