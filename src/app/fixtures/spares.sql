@@ -5,4 +5,7 @@ INSERT INTO spares (id, room_id, stamp, begin_at, end_at, week, assignee, status
     (1, 1, 0, "P0Y0M0DT8H0M0S", "P0Y0M0DT10H0M0S", "2000-W18", NULL, '"None"'),
     (2, 1, 0, "P0Y0M0DT8H0M0S", "P0Y0M0DT10H0M0S", "2000-W19", 1, '"None"'),
     (3, 1, 0, "P0Y0M0DT8H0M0S", "P0Y0M0DT10H0M0S", "schedule", NULL, '"None"'),
-    (4, 1, 0, "P0Y0M0DT8H0M0S", "P0Y0M0DT10H0M0S", "2000-W20", 1, '"CheckedIn"');
+    (4, 1, 0, "P0Y0M0DT8H0M0S", "P0Y0M0DT10H0M0S", "2000-W20", 1, '"CheckedIn"'),
+    (5, 1, 1, "P0Y0M1DT8H0M0S", "P0Y0M1DT10H0M0S", "schedule", NULL, '"None"'),
+    (6, 1, 0, "P0Y0M0DT8H0M0S", "P0Y0M0DT10H0M0S", "2000-W21", NULL, '"None"'),
+    (7, 1, 1, "P0Y0M1DT8H0M0S", "P0Y0M1DT10H0M0S", "2000-W21", NULL, '"None"');
