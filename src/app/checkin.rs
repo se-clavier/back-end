@@ -21,7 +21,9 @@ impl CheckinAPI for AppState {
     async fn checkin(&self, req: CheckinRequest, auth: Auth) -> CheckinResponse {
         match self.signer.validate(api::Role::terminal, req.credential) {
             api::Result::Ok(_) => {}
-            _ => panic!("Invalid credential"),
+            _ => {
+                return CheckinResponse::InvailidCredential;
+            }
         }
         let mut tx = self.database_pool.begin().await.unwrap();
         let (status, begin_at, week): (Json<CheckinStatus>, String, String) = sqlx::query_as(
@@ -66,7 +68,9 @@ impl CheckinAPI for AppState {
     async fn checkout(&self, req: CheckoutRequest, auth: Auth) -> CheckoutResponse {
         match self.signer.validate(api::Role::terminal, req.credential) {
             api::Result::Ok(_) => {}
-            _ => panic!("Invalid credential"),
+            _ => {
+                return CheckoutResponse::InvailidCredential;
+            }
         }
         let mut tx = self.database_pool.begin().await.unwrap();
         let (status, end_at, week): (Json<CheckinStatus>, String, String) =
@@ -141,7 +145,6 @@ mod test {
     }
 
     #[sqlx::test(fixtures("users"))]
-    #[should_panic(expected = "Invalid credential")]
     fn test_checkin_invalid_credential(pool: SqlitePool) {
         let app = TestApp::new(pool);
         let auth = match app
@@ -163,11 +166,13 @@ mod test {
                 signature: String::new(),
             },
         };
-        app.checkin(req, auth).await;
+        assert_eq!(
+            CheckinResponse::InvailidCredential,
+            app.checkin(req, auth).await
+        );
     }
 
     #[sqlx::test(fixtures("users"))]
-    #[should_panic(expected = "Invalid credential")]
     fn test_checkout_invalid_credential(pool: SqlitePool) {
         let app = TestApp::new(pool);
         let auth = match app
@@ -189,7 +194,10 @@ mod test {
                 signature: String::new(),
             },
         };
-        app.checkout(req, auth).await;
+        assert_eq!(
+            CheckoutResponse::InvailidCredential,
+            app.checkout(req, auth).await
+        );
     }
 
     #[sqlx::test(fixtures("users", "spares"))]
