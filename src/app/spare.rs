@@ -1,4 +1,4 @@
-use super::{AppState, CheckinStatus};
+use super::{algorithm::max_flow, parse_time_delta, AppState, CheckinStatus};
 use api::{
     Auth, Room, Spare, SpareAutoAssignRequest, SpareAutoAssignResponse, SpareInitRequest,
     SpareInitResponse, SpareListRequest, SpareListResponse, SpareQuestionaireRequest,
@@ -300,12 +300,44 @@ impl SpareAPI for AppState {
         .await
         .unwrap()
         .into_iter()
-        .map(|(user_id, stamps): (i64, Json<Vec<u64>>)| (user_id as u64, stamps.0))
+        .map(|(user_id, stamps): (i64, Json<Vec<usize>>)| (user_id, stamps.0))
         .collect();
 
-        // todo!
+        let spares = query_as(
+            "
+            SELECT
+                stamp,
+                begin_at
+                FROM spares
+                WHERE week = 'schedule'
+                ORDER BY stamp
+            ",
+        )
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|(stamp, begin_at): (i64, String)| parse_time_delta(begin_at).num_days() as usize)
+        .collect();
 
+        let assignees = max_flow(users, spares);
+        for (stamp, assignee) in assignees.into_iter().enumerate() {
+            let mut qb = QueryBuilder::new(
+                "UPDATE spares
+                    SET assignee = ",
+            );
+            qb.push_bind(assignee);
+            qb.push(" WHERE (stamp, week) IN ");
+            qb.push_tuples(req.weeks.iter(), |mut b, week| {
+                b.push_bind(stamp as i64);
+                b.push_bind(week);
+            });
+            tracing::info!("sql: {}", qb.sql());
+            let query = qb.build();
+            query.execute(&mut *tx).await.unwrap();
+        }
         tx.commit().await.unwrap();
+
         SpareAutoAssignResponse::Success
     }
 }
@@ -433,15 +465,26 @@ mod test {
         assert_eq!(list.rooms, vec![String::from("room1")]);
         assert_eq!(
             list.spares,
-            vec![Spare {
-                id: 3,
-                stamp: 0,
-                week: String::from("schedule"),
-                begin_time: String::from("P0Y0M0DT8H0M0S"),
-                end_time: String::from("P0Y0M0DT10H0M0S"),
-                room: String::from("room1"),
-                assignee: None
-            },]
+            vec![
+                Spare {
+                    id: 3,
+                    stamp: 0,
+                    week: String::from("schedule"),
+                    begin_time: String::from("P0Y0M0DT8H0M0S"),
+                    end_time: String::from("P0Y0M0DT10H0M0S"),
+                    room: String::from("room1"),
+                    assignee: None
+                },
+                Spare {
+                    id: 5,
+                    stamp: 1,
+                    week: String::from("schedule"),
+                    begin_time: String::from("P0Y0M1DT8H0M0S"),
+                    end_time: String::from("P0Y0M1DT10H0M0S"),
+                    room: String::from("room1"),
+                    assignee: None
+                },
+            ]
         );
     }
     #[sqlx::test(fixtures("users", "spares"))]
@@ -545,9 +588,52 @@ mod test {
         };
 
         let res = app
-            .spare_trigger_assign(SpareAutoAssignRequest { weeks: Vec::new() }, auth)
+            .spare_trigger_assign(
+                SpareAutoAssignRequest {
+                    weeks: vec![String::from("2000-W21")],
+                },
+                auth.clone(),
+            )
             .await;
 
         assert_eq!(res, SpareAutoAssignResponse::Success);
+
+        let list = app
+            .spare_list(
+                SpareListRequest::Week(String::from("2000-W21")),
+                auth.clone(),
+            )
+            .await;
+
+        assert_eq!(list.rooms, vec![String::from("room1")]);
+        assert_eq!(
+            list.spares,
+            vec![
+                Spare {
+                    id: 6,
+                    stamp: 0,
+                    week: String::from("2000-W21"),
+                    begin_time: String::from("P0Y0M0DT8H0M0S"),
+                    end_time: String::from("P0Y0M0DT10H0M0S"),
+                    room: String::from("room1"),
+                    assignee: Some(User {
+                        id: 1,
+                        username: String::from("testuser"),
+                    }),
+                },
+                Spare {
+                    id: 7,
+                    stamp: 1,
+                    week: String::from("2000-W21"),
+                    begin_time: String::from("P0Y0M1DT8H0M0S"),
+                    end_time: String::from("P0Y0M1DT10H0M0S"),
+                    room: String::from("room1"),
+                    assignee: Some(User {
+                        id: 1,
+                        username: String::from("testuser"),
+                    }),
+                },
+            ]
+        );
     }
 }
