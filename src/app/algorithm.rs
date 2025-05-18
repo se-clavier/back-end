@@ -1,5 +1,5 @@
-use std::collections::VecDeque;
 use std::cmp::min;
+use std::collections::VecDeque;
 
 #[derive(Clone, Debug)]
 pub struct Edge {
@@ -18,8 +18,8 @@ pub struct Mcmf {
     pub maxflow: i32,
     pub cost: i32,
     pub in_field: i32,
-    pub S: i32,
-    pub T: i32,
+    pub ss: i32,
+    pub tt: i32,
     pub a0: i32,
     pub a1: i32,
     pub d: Vec<i32>,
@@ -44,8 +44,8 @@ impl Mcmf {
             maxflow: 0,
             cost: 0,
             in_field: 0,
-            S: 0,
-            T: 0,
+            ss: 0,
+            tt: 0,
             a0: 0,
             a1: 0,
             d: Vec::new(),
@@ -57,8 +57,20 @@ impl Mcmf {
             e: Vec::new(),
             q: VecDeque::new(),
         };
-        m.e.push(Edge { u: 0, next: 0, v: 0, w: 0, c: 0 });
-        m.e.push(Edge { u: 0, next: 0, v: 0, w: 0, c: 0 });
+        m.e.push(Edge {
+            u: 0,
+            next: 0,
+            v: 0,
+            w: 0,
+            c: 0,
+        });
+        m.e.push(Edge {
+            u: 0,
+            next: 0,
+            v: 0,
+            w: 0,
+            c: 0,
+        });
         m
     }
 
@@ -70,8 +82,8 @@ impl Mcmf {
         self.maxflow = 0;
         self.cost = 0;
         self.in_field = 0;
-        self.S = 0;
-        self.T = 0;
+        self.ss = 0;
+        self.tt = 0;
         self.a0 = 0;
         self.a1 = 0;
         self.d.clear();
@@ -96,7 +108,13 @@ impl Mcmf {
 
     fn add(&mut self, u: i32, v: i32, w: i32, c: i32) {
         let idx = self.e.len();
-        self.e.push(Edge { u, next: self.head[u as usize], v, w, c });
+        self.e.push(Edge {
+            u,
+            next: self.head[u as usize],
+            v,
+            w,
+            c,
+        });
         self.head[u as usize] = idx;
     }
 
@@ -126,9 +144,9 @@ impl Mcmf {
         self.q.clear();
         self.vis.fill(false);
         self.d.fill(Self::INF);
-        self.q.push_back(self.S);
-        self.d[self.S as usize] = 0;
-        self.incf[self.S as usize] = std::i32::MAX;
+        self.q.push_back(self.ss);
+        self.d[self.ss as usize] = 0;
+        self.incf[self.ss as usize] = std::i32::MAX;
         while let Some(u) = self.q.pop_front() {
             self.vis[u as usize] = false;
             let mut i = self.head[u as usize];
@@ -146,14 +164,14 @@ impl Mcmf {
                 i = e.next;
             }
         }
-        self.d[self.T as usize] != Self::INF
+        self.d[self.tt as usize] != Self::INF
     }
 
     /// 沿增广路更新流与费用
     fn update(&mut self) {
-        let mut x = self.T;
-        let flow = self.incf[self.T as usize];
-        while x != self.S {
+        let mut x = self.tt;
+        let flow = self.incf[self.tt as usize];
+        while x != self.ss {
             let i = self.pre[x as usize];
             self.e[i].w -= flow;
             let ri = i ^ 1;
@@ -161,7 +179,7 @@ impl Mcmf {
             x = self.e[ri].v;
         }
         self.maxflow += flow;
-        self.cost += self.d[self.T as usize] * flow;
+        self.cost += self.d[self.tt as usize] * flow;
     }
 
     /// 主循环：不断 SPFA + 更新
@@ -174,23 +192,23 @@ impl Mcmf {
     /// 求解
     pub fn solve(&mut self) {
         // 构造超级源汇
-        self.S = self.n + 1;
-        self.T = self.n + 2;
+        self.ss = self.n + 1;
+        self.tt = self.n + 2;
         for i in 1..=self.n {
             let ai = self.a[i as usize];
             if ai > 0 {
-                self.add_edge(self.S, i, 0, ai, 0);
+                self.add_edge(self.ss, i, 0, ai, 0);
             } else if ai < 0 {
-                self.add_edge(i, self.T, 0, -ai, 0);
+                self.add_edge(i, self.tt, 0, -ai, 0);
             }
         }
         // 保证原图中循环流可行
-        self.add_edge(self.T, self.S, 0, Self::INF, 0);
+        self.add_edge(self.tt, self.ss, 0, Self::INF, 0);
         self.work();
 
         // 切换为真正的源汇
-        self.S = self.s;
-        self.T = self.t;
+        self.ss = self.s;
+        self.tt = self.t;
         self.a1 += self.cost;
         self.maxflow = 0;
         self.cost = 0;
@@ -203,7 +221,6 @@ impl Mcmf {
         self.a1 += self.cost;
     }
 }
-
 
 use std::error::Error;
 
@@ -277,8 +294,11 @@ impl Distribution {
         }
         for (i, user) in self.user.iter().enumerate() {
             for &stamp in &user.stamps {
-                let from = (i as u64 + 2 + (self.spare[stamp as usize].day + 1) * self.user.len() as u64) as i32;
-                let to = n_nodes - self.spare.len() as i32 + self.spare[stamp as usize].stamp as i32;
+                let from =
+                    (i as u64 + 2 + (self.spare[stamp as usize].day + 1) * self.user.len() as u64)
+                        as i32;
+                let to =
+                    n_nodes - self.spare.len() as i32 + self.spare[stamp as usize].stamp as i32;
                 self.mf.add_edge(from, to, 0, 1, 0);
             }
         }
@@ -290,13 +310,19 @@ impl Distribution {
         let a0 = 1 + self.user.len() as i64;
         let a1 = 1 + (self.user.len() * 8) as i64;
         let a2 = (self.mf.n - 1) as i64;
-        let mut res = vec![User { id: 0, stamps: Vec::new() }; self.user.len()];
+        let mut res = vec![
+            User {
+                id: 0,
+                stamps: Vec::new()
+            };
+            self.user.len()
+        ];
         for e in &self.mf.e {
             let u = e.u as i64;
             let v = e.v as i64;
-            if u > a0 && u <= a1 && v > a1 && v <= a2 {
-                let idx = (u - a0 - 1) as usize;
-                let stamp = (v - a2 - 1) as u64;
+            if u > a0 && u <= a1 && v > a1 && v <= a2 && e.w == 0 {
+                let idx = ((u - a0 - 1) % self.user.len() as i64) as usize;
+                let stamp = (v - a1 - 1) as u64;
                 res[idx].stamps.push(stamp);
             }
         }
@@ -317,8 +343,11 @@ pub fn distribute(users: Vec<User>, spares: Vec<Spare>) -> Vec<User> {
 
 #[cfg(test)]
 mod tests {
+    use crate::app::user;
+
     use super::*;
 
+	use rand::{thread_rng, seq::SliceRandom};
     #[test]
     fn test_mcmf_sample1() {
         let mut mf = Mcmf::new();
@@ -335,10 +364,10 @@ mod tests {
 
         mf.solve();
 
-        assert_eq!(mf.a0, 50,  "期望最大流 a0 = 50，但实际是 {}", mf.a0);
+        assert_eq!(mf.a0, 50, "期望最大流 a0 = 50，但实际是 {}", mf.a0);
         assert_eq!(mf.a1, 280, "期望最小费用 a1 = 280，但实际是 {}", mf.a1);
     }
-	#[test]
+    #[test]
     fn test_mcmf_sample2() {
         let mut mf = Mcmf::new();
         mf.n = 5;
@@ -356,8 +385,86 @@ mod tests {
 
         mf.solve();
 
-        assert_eq!(mf.a0, 3,  "期望最大流 a0 = 3，但实际是 {}", mf.a0);
+        assert_eq!(mf.a0, 3, "期望最大流 a0 = 3，但实际是 {}", mf.a0);
         assert_eq!(mf.a1, 12, "期望最小费用 a1 = 12，但实际是 {}", mf.a1);
+    }
+    // empty_test
+    #[test]
+    fn test_distribution_sample1() {
+        let users = vec![User {
+            id: 0,
+            stamps: vec![],
+        }];
+        let spares = vec![Spare { day: 0, stamp: 0 }];
+        let res = distribute(users, spares);
+        println!("res: {:?}", res);
+        assert_eq!(res.len(), 1, "期望结果长度为 1，但实际是 {}", res.len());
+    }
+    #[test]
+    fn test_distribution_sample2() {
+        let users = vec![User {
+            id: 0,
+            stamps: vec![0],
+        }];
+        let spares = vec![Spare { day: 0, stamp: 0 }];
+        let res = distribute(users, spares);
+        // println!("res: {:?}", res);
+        assert_eq!(res.len(), 1, "期望结果长度为 1，但实际是 {}", res.len());
+    }
+
+    #[test]
+    fn test_distribution_sample3() {
+        let users = vec![User {
+            id: 0,
+            stamps: vec![0, 1],
+        }];
+        let spares = vec![Spare { day: 0, stamp: 0 }, Spare { day: 0, stamp: 1 }];
+        let res = distribute(users, spares);
+        // println!("res: {:?}", res);
+        assert_eq!(res.len(), 1, "期望结果长度为 1，但实际是 {}", res.len());
+    }
+
+    #[test]
+    fn test_distribution_sample4() {
+        let mut spares = Vec::new();
+        for day in 0..7 {
+            for slot in 0..2 {
+                spares.push(Spare {
+                    stamp: (day * 2 + slot) as u64,
+                    day: day as u64,
+                });
+            }
+        }
+
+        let mut rng = thread_rng();
+        let all_slots: Vec<u64> = (0..14).collect();
+        let users: Vec<User> = (0..10)
+            .map(|i| {
+                let mut picks = all_slots.clone();
+                picks.shuffle(&mut rng);
+                picks.truncate(5);
+                User { id: i as u64, stamps: picks }
+            })
+            .collect();
+
+		println!("初始");
+		for user in &users {
+            println!("  用户 {}: 时隙 {:?}", user.id, user.stamps);
+        }
+        let result = distribute(users.clone(), spares.clone());
+
+        println!("分配结果：");
+        for user in &result {
+            println!("  用户 {}: 时隙 {:?}", user.id, user.stamps);
+        }
+
+        assert_eq!(result.len(), users.len(), "结果用户数量应与输入一致");
+        for user in result {
+            assert!(user.stamps.len() <= 5, "用户分配时隙不能超过 5");
+            for &stamp in &user.stamps {
+                assert!(stamp < 14, "时隙索引应在 0..14 范围内");
+            }
+        }
     }
 
 }

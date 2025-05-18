@@ -28,3 +28,5 @@ cxx = "1.0"
 [build-dependencies]
 cxx-build = "1.0"
 iso8601 = { version = "0.6.2", features = ["chrono", "serde"] }
+
+rand = "0.8.5"

@@ -166,7 +166,11 @@ dependencies = [
  "hmac",
  "http-body-util",
  "hyper-util",
+<<<<<<< HEAD
  "iso8601",
+=======
+ "rand",
+>>>>>>> 4c6697d (fix(algorithm): resolve index-out-of-bounds in solve and add unit test)
  "serde",
  "serde_json",
  "sha2",
