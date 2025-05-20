@@ -1,4 +1,5 @@
 mod admin;
+mod algorithm;
 mod checkin;
 mod config;
 mod hash;
@@ -14,7 +15,7 @@ use checkin::CheckinAPI;
 use chrono::{DateTime, TimeDelta, Utc};
 use config::Config;
 use hash::Hasher;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sign::Signer;
 use spare::SpareAPI;
 use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool};
@@ -25,10 +26,11 @@ const DEFAULT_SECRET: &str = "mysecret";
 
 const DEFAULT_SALT: &str = "YmFzZXNhbHQ";
 
-#[derive(Debug, Clone, PartialEq, Eq, sqlx::Type)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 enum CheckinStatus {
     None,
     CheckedIn,
+    CheckedInButLate(i64),
     CheckedOut,
 }
 
@@ -160,6 +162,20 @@ impl API for AppState {
         auth: api::Auth,
     ) -> api::SpareInitResponse {
         SpareAPI::spare_init(self, req, auth).await
+    }
+    async fn spare_set_assignee(
+        &self,
+        req: api::SpareSetAssigneeRequest,
+        auth: api::Auth,
+    ) -> api::SpareSetAssigneeResponse {
+        SpareAPI::spare_set_assignee(self, req, auth).await
+    }
+    async fn spare_trigger_assign(
+        &self,
+        req: api::SpareAutoAssignRequest,
+        auth: api::Auth,
+    ) -> api::SpareAutoAssignResponse {
+        SpareAPI::spare_trigger_assign(self, req, auth).await
     }
 
     async fn user_set(&self, req: api::UserSetRequest, auth: api::Auth) -> api::UserSetResponse {

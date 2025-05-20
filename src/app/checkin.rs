@@ -3,6 +3,7 @@ use api::{
     TerminalCredentialRequest, TerminalCredentialResponse,
 };
 use chrono::{TimeDelta, Utc};
+use sqlx::types::Json;
 
 use crate::app::{parse_time_delta, parse_week, AppState, CheckinStatus};
 
@@ -20,10 +21,12 @@ impl CheckinAPI for AppState {
     async fn checkin(&self, req: CheckinRequest, auth: Auth) -> CheckinResponse {
         match self.signer.validate(api::Role::terminal, req.credential) {
             api::Result::Ok(_) => {}
-            _ => panic!("Invalid credential"),
+            _ => {
+                return CheckinResponse::InvailidCredential;
+            }
         }
         let mut tx = self.database_pool.begin().await.unwrap();
-        let (status, begin_at, week): (CheckinStatus, String, String) = sqlx::query_as(
+        let (status, begin_at, week): (Json<CheckinStatus>, String, String) = sqlx::query_as(
             "SELECT status, begin_at, week from spares WHERE id = ? AND assignee = ?",
         )
         .bind(req.id as i64)
@@ -31,17 +34,24 @@ impl CheckinAPI for AppState {
         .fetch_one(&mut *tx)
         .await
         .unwrap();
-        let res = match status {
+        let res = match status.0 {
             CheckinStatus::None => {
                 let begin_at = parse_week(week) + parse_time_delta(begin_at);
                 let now = chrono::Utc::now();
                 if now + TimeDelta::minutes(30) < begin_at {
                     CheckinResponse::Early
                 } else if now > begin_at {
-                    CheckinResponse::Late((now - begin_at).num_minutes())
+                    let late = (now - begin_at).num_minutes();
+                    sqlx::query("UPDATE spares SET status = ? WHERE id = ?")
+                        .bind(Json(CheckinStatus::CheckedInButLate(late)))
+                        .bind(req.id as i64)
+                        .execute(&mut *tx)
+                        .await
+                        .unwrap();
+                    CheckinResponse::Late(late)
                 } else {
                     sqlx::query("UPDATE spares SET status = ? WHERE id = ?")
-                        .bind(CheckinStatus::CheckedIn)
+                        .bind(Json(CheckinStatus::CheckedIn))
                         .bind(req.id as i64)
                         .execute(&mut *tx)
                         .await
@@ -58,17 +68,19 @@ impl CheckinAPI for AppState {
     async fn checkout(&self, req: CheckoutRequest, auth: Auth) -> CheckoutResponse {
         match self.signer.validate(api::Role::terminal, req.credential) {
             api::Result::Ok(_) => {}
-            _ => panic!("Invalid credential"),
+            _ => {
+                return CheckoutResponse::InvailidCredential;
+            }
         }
         let mut tx = self.database_pool.begin().await.unwrap();
-        let (status, end_at, week): (CheckinStatus, String, String) =
+        let (status, end_at, week): (Json<CheckinStatus>, String, String) =
             sqlx::query_as("SELECT status, end_at, week from spares WHERE id = ? AND assignee = ?")
                 .bind(req.id as i64)
                 .bind(auth.id as i64)
                 .fetch_one(&mut *tx)
                 .await
                 .unwrap();
-        let res = match status {
+        let res = match status.0 {
             CheckinStatus::CheckedOut => CheckoutResponse::Duplicate,
             CheckinStatus::None => CheckoutResponse::NotCheckedIn,
             _ => {
@@ -80,7 +92,7 @@ impl CheckinAPI for AppState {
                     CheckoutResponse::Late
                 } else {
                     sqlx::query("UPDATE spares SET status = ? WHERE id = ?")
-                        .bind(CheckinStatus::CheckedOut)
+                        .bind(Json(CheckinStatus::CheckedOut))
                         .bind(req.id as i64)
                         .execute(&mut *tx)
                         .await
@@ -133,7 +145,6 @@ mod test {
     }
 
     #[sqlx::test(fixtures("users"))]
-    #[should_panic(expected = "Invalid credential")]
     fn test_checkin_invalid_credential(pool: SqlitePool) {
         let app = TestApp::new(pool);
         let auth = match app
@@ -155,11 +166,13 @@ mod test {
                 signature: String::new(),
             },
         };
-        app.checkin(req, auth).await;
+        assert_eq!(
+            CheckinResponse::InvailidCredential,
+            app.checkin(req, auth).await
+        );
     }
 
     #[sqlx::test(fixtures("users"))]
-    #[should_panic(expected = "Invalid credential")]
     fn test_checkout_invalid_credential(pool: SqlitePool) {
         let app = TestApp::new(pool);
         let auth = match app
@@ -181,7 +194,10 @@ mod test {
                 signature: String::new(),
             },
         };
-        app.checkout(req, auth).await;
+        assert_eq!(
+            CheckoutResponse::InvailidCredential,
+            app.checkout(req, auth).await
+        );
     }
 
     #[sqlx::test(fixtures("users", "spares"))]

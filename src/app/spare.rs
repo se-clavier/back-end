@@ -1,11 +1,12 @@
-use super::{AppState, CheckinStatus};
+use super::{algorithm::max_flow, parse_time_delta, AppState, CheckinStatus};
 use api::{
-    Auth, Room, Spare, SpareInitRequest, SpareInitResponse, SpareListRequest, SpareListResponse,
-    SpareQuestionaireRequest, SpareQuestionaireResponse, SpareReturnRequest, SpareReturnResponse,
-    SpareTakeRequest, SpareTakeResponse, User, Vacancy,
+    Auth, Room, Spare, SpareAutoAssignRequest, SpareAutoAssignResponse, SpareInitRequest,
+    SpareInitResponse, SpareListRequest, SpareListResponse, SpareQuestionaireRequest,
+    SpareQuestionaireResponse, SpareReturnRequest, SpareReturnResponse, SpareSetAssigneeRequest,
+    SpareSetAssigneeResponse, SpareTakeRequest, SpareTakeResponse, User, Vacancy,
 };
 
-use sqlx::{query, Executor, QueryBuilder, Row};
+use sqlx::{query, query_as, types::Json, Executor, QueryBuilder, Row};
 
 pub trait SpareAPI {
     async fn spare_questionaire(
@@ -17,9 +18,18 @@ pub trait SpareAPI {
     async fn spare_take(&self, req: SpareTakeRequest, auth: Auth) -> SpareTakeResponse;
     async fn spare_list(&self, req: SpareListRequest, auth: Auth) -> SpareListResponse;
     async fn spare_init(&self, req: SpareInitRequest, auth: Auth) -> SpareInitResponse;
+    async fn spare_set_assignee(
+        &self,
+        req: SpareSetAssigneeRequest,
+        auth: Auth,
+    ) -> SpareSetAssigneeResponse;
+    async fn spare_trigger_assign(
+        &self,
+        req: SpareAutoAssignRequest,
+        auth: Auth,
+    ) -> SpareAutoAssignResponse;
 }
 
-#[allow(unused)]
 impl SpareAPI for AppState {
     async fn spare_questionaire(
         &self,
@@ -239,7 +249,7 @@ impl SpareAPI for AppState {
                     .push_bind(end_time)
                     .push_bind(week)
                     .push_bind(assignee)
-                    .push_bind(CheckinStatus::None);
+                    .push_bind(Json(CheckinStatus::None));
             },
         );
         let spares_query = spares_qb.build();
@@ -248,6 +258,87 @@ impl SpareAPI for AppState {
         tx.commit().await.unwrap();
 
         SpareInitResponse::Success
+    }
+
+    async fn spare_set_assignee(
+        &self,
+        req: SpareSetAssigneeRequest,
+        _auth: Auth,
+    ) -> SpareSetAssigneeResponse {
+        let mut tx = self.database_pool.begin().await.unwrap();
+
+        query(
+            "UPDATE spares
+                SET assignee = ?
+              WHERE id = ?",
+        )
+        .bind(req.assignee.map(|u| u.id as i64))
+        .bind(req.id as i64)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+
+        tx.commit().await.unwrap();
+
+        SpareSetAssigneeResponse::Success
+    }
+
+    #[allow(unused)]
+    async fn spare_trigger_assign(
+        &self,
+        req: SpareAutoAssignRequest,
+        auth: Auth,
+    ) -> SpareAutoAssignResponse {
+        let mut tx = self.database_pool.begin().await.unwrap();
+        let users: Vec<_> = query_as(
+            "
+            SELECT user_id, json_group_array(stamp) FROM availables
+                GROUP BY user_id
+            ",
+        )
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|(user_id, stamps): (i64, Json<Vec<usize>>)| (user_id, stamps.0))
+        .collect();
+
+        let spares = query_as(
+            "
+            SELECT
+                stamp,
+                begin_at
+                FROM spares
+                WHERE week = 'schedule'
+                ORDER BY stamp
+            ",
+        )
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|(stamp, begin_at): (i64, String)| parse_time_delta(begin_at).num_days() as usize)
+        .collect();
+
+        let assignees = max_flow(users, spares);
+        for (stamp, assignee) in assignees.into_iter().enumerate() {
+            let mut qb = QueryBuilder::new(
+                "UPDATE spares
+                    SET assignee = ",
+            );
+            qb.push_bind(assignee);
+            qb.push(" WHERE (stamp, week) IN ");
+            qb.push_tuples(req.weeks.iter(), |mut b, week| {
+                b.push_bind(stamp as i64);
+                b.push_bind(week);
+            });
+            tracing::info!("sql: {}", qb.sql());
+            let query = qb.build();
+            query.execute(&mut *tx).await.unwrap();
+        }
+        tx.commit().await.unwrap();
+
+        SpareAutoAssignResponse::Success
     }
 }
 
@@ -374,15 +465,26 @@ mod test {
         assert_eq!(list.rooms, vec![String::from("room1")]);
         assert_eq!(
             list.spares,
-            vec![Spare {
-                id: 3,
-                stamp: 0,
-                week: String::from("schedule"),
-                begin_time: String::from("P0Y0M0DT8H0M0S"),
-                end_time: String::from("P0Y0M0DT10H0M0S"),
-                room: String::from("room1"),
-                assignee: None
-            },]
+            vec![
+                Spare {
+                    id: 3,
+                    stamp: 0,
+                    week: String::from("schedule"),
+                    begin_time: String::from("P0Y0M0DT8H0M0S"),
+                    end_time: String::from("P0Y0M0DT10H0M0S"),
+                    room: String::from("room1"),
+                    assignee: None
+                },
+                Spare {
+                    id: 5,
+                    stamp: 1,
+                    week: String::from("schedule"),
+                    begin_time: String::from("P0Y0M1DT8H0M0S"),
+                    end_time: String::from("P0Y0M1DT10H0M0S"),
+                    room: String::from("room1"),
+                    assignee: None
+                },
+            ]
         );
     }
     #[sqlx::test(fixtures("users", "spares"))]
@@ -441,5 +543,97 @@ mod test {
             app.spare_list(SpareListRequest::Schedule, auth).await,
             SpareListResponse { rooms, spares }
         )
+    }
+
+    #[sqlx::test(fixtures("users", "spares"))]
+    async fn test_spare_set_assignee(pool: SqlitePool) {
+        let app = TestApp::new(pool);
+
+        let auth = match app
+            .login(LoginRequest {
+                username: String::from("testadmin"),
+                password: String::from("password123"),
+            })
+            .await
+        {
+            LoginResponse::Success(auth) => auth,
+            _ => panic!("login failed"),
+        };
+
+        let res = app
+            .spare_set_assignee(
+                SpareSetAssigneeRequest {
+                    id: 2,
+                    assignee: None,
+                },
+                auth,
+            )
+            .await;
+
+        assert_eq!(res, SpareSetAssigneeResponse::Success);
+    }
+    #[sqlx::test(fixtures("users", "spares", "availables"))]
+    async fn test_spare_trigger_assign(pool: SqlitePool) {
+        let app = TestApp::new(pool);
+
+        let auth = match app
+            .login(LoginRequest {
+                username: String::from("testadmin"),
+                password: String::from("password123"),
+            })
+            .await
+        {
+            LoginResponse::Success(auth) => auth,
+            _ => panic!("login failed"),
+        };
+
+        let res = app
+            .spare_trigger_assign(
+                SpareAutoAssignRequest {
+                    weeks: vec![String::from("2000-W21")],
+                },
+                auth.clone(),
+            )
+            .await;
+
+        assert_eq!(res, SpareAutoAssignResponse::Success);
+
+        let list = app
+            .spare_list(
+                SpareListRequest::Week(String::from("2000-W21")),
+                auth.clone(),
+            )
+            .await;
+
+        assert_eq!(list.rooms, vec![String::from("room1")]);
+        assert_eq!(
+            list.spares,
+            vec![
+                Spare {
+                    id: 6,
+                    stamp: 0,
+                    week: String::from("2000-W21"),
+                    begin_time: String::from("P0Y0M0DT8H0M0S"),
+                    end_time: String::from("P0Y0M0DT10H0M0S"),
+                    room: String::from("room1"),
+                    assignee: Some(User {
+                        id: 1,
+                        username: String::from("testuser"),
+                    }),
+                },
+                Spare {
+                    id: 7,
+                    stamp: 1,
+                    week: String::from("2000-W21"),
+                    begin_time: String::from("P0Y0M1DT8H0M0S"),
+                    end_time: String::from("P0Y0M1DT10H0M0S"),
+                    room: String::from("room1"),
+                    assignee: Some(User {
+                        id: 1,
+                        username: String::from("testuser"),
+                    }),
+                },
+            ]
+        );
     }
 }
