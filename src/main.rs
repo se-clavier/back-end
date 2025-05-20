@@ -1,4 +1,5 @@
 use app::{app, connect_pool};
+
 mod app;
 
 const DATABASE_URL: &str = "sqlite://db/sqlite.db";
