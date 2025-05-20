@@ -617,8 +617,8 @@ mod test {
                     end_time: String::from("P0Y0M0DT10H0M0S"),
                     room: String::from("room1"),
                     assignee: Some(User {
-                        id: 1,
-                        username: String::from("testuser"),
+                        id: 2,
+                        username: String::from("testadmin"),
                     }),
                 },
                 Spare {
