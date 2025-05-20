@@ -343,8 +343,6 @@ pub fn distribute(users: Vec<User>, spares: Vec<Spare>) -> Vec<User> {
 
 #[cfg(test)]
 mod tests {
-    use crate::app::user;
-
     use super::*;
 
 	use rand::{thread_rng, seq::SliceRandom};
