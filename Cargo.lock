@@ -160,6 +160,7 @@ dependencies = [
  "hyper-util",
  "iso8601",
  "rand 0.9.1",
+ "rand_core 0.6.4",
  "serde",
  "serde_json",
  "sha2",

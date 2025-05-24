@@ -3,6 +3,8 @@ use chrono::{DateTime, Utc};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 
+use crate::config::Config;
+
 type HmacSha256 = Hmac<Sha256>;
 
 #[derive(Debug, Clone)]
@@ -12,7 +14,7 @@ pub struct Signer {
 
 impl Default for Signer {
     fn default() -> Self {
-        Self::new(super::DEFAULT_SECRET)
+        Self::new(&Config::default().secret)
     }
 }
 
