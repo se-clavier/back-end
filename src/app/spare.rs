@@ -125,7 +125,7 @@ impl SpareAPI for AppState {
         SpareReturnResponse {}
     }
 
-    async fn spare_list(&self, req: SpareListRequest, _auth: Auth) -> SpareListResponse {
+    async fn spare_list(&self, req: SpareListRequest, auth: Auth) -> SpareListResponse {
         let mut tx = self.database_pool.begin().await.unwrap();
 
         let rooms: Vec<Room> = query("SELECT name FROM rooms ORDER BY id")
@@ -136,13 +136,44 @@ impl SpareAPI for AppState {
             .map(|row| row.get("name"))
             .collect();
 
-        let week = match req {
-            SpareListRequest::Schedule => String::from("schedule"),
-            SpareListRequest::Week(week_str) => week_str,
-        };
-
-        let rows = query(
-            r#"
+        #[derive(sqlx::FromRow)]
+        struct SpareRow {
+            id: u64,
+            stamp: u64,
+            week: String,
+            begin_at: String,
+            end_at: String,
+            room: String,
+            assignee_id: Option<u64>,
+            username: Option<String>,
+        }
+        let spares = match req {
+            SpareListRequest::Schedule => query_as(
+                r#"
+                    SELECT
+                      s.id                     AS id,
+                      s.stamp                  AS stamp,
+                      s.week                   AS week,
+                      s.begin_at               AS begin_at,
+                      s.end_at                 AS end_at,
+                      r.name                   AS room,
+                      a.user_id                AS assignee_id,
+                      u.username               AS username
+                    FROM spares s
+                    JOIN rooms r   ON s.room_id  = r.id
+                    LEFT JOIN availables a ON s.stamp = a.stamp AND a.user_id = ?
+                    LEFT JOIN users u ON a.user_id = u.id
+                    WHERE s.week = ?
+                    ORDER BY s.id
+                    "#,
+            )
+            .bind(auth.id as i64)
+            .bind("schedule")
+            .fetch_all(&self.database_pool)
+            .await
+            .unwrap(),
+            SpareListRequest::Week(week_str) => query_as(
+                r#"
                 SELECT
                   s.id                     AS id,
                   s.stamp                  AS stamp,
@@ -158,29 +189,25 @@ impl SpareAPI for AppState {
                 WHERE s.week = ?
                 ORDER BY s.id
                 "#,
-        )
-        .bind(&week)
-        .fetch_all(&self.database_pool)
-        .await
-        .unwrap();
-
-        let spares = rows
-            .into_iter()
-            .map(|row| Spare {
-                id: row.get::<i64, _>("id") as u64,
-                stamp: row.get::<i64, _>("stamp") as u64,
-                week: row.get("week"),
-                begin_time: row.get("begin_at"),
-                end_time: row.get("end_at"),
-                room: row.get("room"),
-                assignee: row.get::<Option<i64>, _>("assignee_id").and_then(|uid| {
-                    row.get::<Option<String>, _>("username").map(|u| User {
-                        id: uid as u64,
-                        username: u,
-                    })
-                }),
-            })
-            .collect();
+            )
+            .bind(&week_str)
+            .fetch_all(&self.database_pool)
+            .await
+            .unwrap(),
+        }
+        .into_iter()
+        .map(|row: SpareRow| Spare {
+            id: row.id,
+            stamp: row.stamp,
+            week: row.week,
+            begin_time: row.begin_at,
+            end_time: row.end_at,
+            room: row.room,
+            assignee: row
+                .assignee_id
+                .and_then(|id| row.username.map(|username| User { id, username })),
+        })
+        .collect();
 
         tx.commit().await.unwrap();
 
@@ -445,7 +472,7 @@ mod test {
         );
     }
 
-    #[sqlx::test(fixtures("users", "spares"))]
+    #[sqlx::test(fixtures("users", "spares", "availables"))]
     async fn test_spare_list_schedule(pool: SqlitePool) {
         let app = TestApp::new(pool);
 
@@ -473,7 +500,10 @@ mod test {
                     begin_time: String::from("P0Y0M0DT8H0M0S"),
                     end_time: String::from("P0Y0M0DT10H0M0S"),
                     room: String::from("room1"),
-                    assignee: None
+                    assignee: Some(User {
+                        id: 1,
+                        username: String::from("testuser"),
+                    })
                 },
                 Spare {
                     id: 5,
@@ -482,7 +512,10 @@ mod test {
                     begin_time: String::from("P0Y0M1DT8H0M0S"),
                     end_time: String::from("P0Y0M1DT10H0M0S"),
                     room: String::from("room1"),
-                    assignee: None
+                    assignee: Some(User {
+                        id: 1,
+                        username: String::from("testuser"),
+                    })
                 },
             ]
         );
@@ -519,10 +552,7 @@ mod test {
                 begin_time: String::from("test_begin2"),
                 end_time: String::from("test_end2"),
                 room: String::from("test_room1"),
-                assignee: Some(User {
-                    id: 1,
-                    username: String::from("testuser"),
-                }),
+                assignee: None,
             },
         ];
 
