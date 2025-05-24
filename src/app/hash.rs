@@ -1,22 +1,21 @@
 use argon2::{password_hash::SaltString, Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
+use rand_core::OsRng;
 
 #[derive(Debug, Clone)]
 pub struct Hasher {
-    salt: SaltString,
     argon2: Argon2<'static>,
 }
 
 impl Hasher {
-    pub fn new(salt: &str) -> Self {
+    pub fn new() -> Self {
         Self {
-            salt: SaltString::from_b64(salt).unwrap(),
             argon2: Argon2::default(),
         }
     }
 
     pub fn hash(&self, password: &str) -> String {
         self.argon2
-            .hash_password(password.as_bytes(), &self.salt)
+            .hash_password(password.as_bytes(), &SaltString::generate(&mut OsRng))
             .unwrap()
             .to_string()
     }
@@ -30,7 +29,7 @@ impl Hasher {
 
 impl Default for Hasher {
     fn default() -> Self {
-        Self::new(super::DEFAULT_SALT)
+        Self::new()
     }
 }
 

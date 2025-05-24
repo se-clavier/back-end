@@ -25,3 +25,4 @@ sha2 = "0.10.8"
 chrono = "0.4.33"
 iso8601 = { version = "0.6.2", features = ["chrono", "serde"] }
 rand = "0.9.1"
+rand_core = { version = "0.6.4", features = ["getrandom"] }

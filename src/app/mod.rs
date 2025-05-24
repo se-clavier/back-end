@@ -1,7 +1,6 @@
 mod admin;
 mod algorithm;
 mod checkin;
-mod config;
 mod hash;
 mod sign;
 mod spare;
@@ -12,7 +11,6 @@ use api::{APICollection, API};
 use axum::{extract::State, response::Response, routing::post, Json, Router};
 use checkin::CheckinAPI;
 use chrono::{DateTime, TimeDelta, Utc};
-use config::Config;
 use hash::Hasher;
 use serde::{Deserialize, Serialize};
 use sign::Signer;
@@ -21,9 +19,7 @@ use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use user::UserAPI;
 
-const DEFAULT_SECRET: &str = "mysecret";
-
-const DEFAULT_SALT: &str = "YmFzZXNhbHQ";
+use crate::config::Config;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 enum CheckinStatus {
@@ -69,7 +65,7 @@ pub fn app(pool: SqlitePool, cfg: Config) -> Router {
         .layer(TraceLayer::new_for_http())
         .with_state(AppState {
             database_pool: pool,
-            password_hasher: Hasher::new(&cfg.salt),
+            password_hasher: Hasher::new(),
             signer: Signer::new(&cfg.secret),
         })
 }
