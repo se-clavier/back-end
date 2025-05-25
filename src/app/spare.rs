@@ -224,6 +224,30 @@ impl SpareAPI for AppState {
             .fetch_all(&self.database_pool)
             .await
             .unwrap(),
+            SpareListRequest::Assigned => query_as(
+                r#"
+                SELECT
+                  s.id                     AS id,
+                  s.stamp                  AS stamp,
+                  s.week                   AS week,
+                  s.begin_at               AS begin_at,
+                  s.end_at                 AS end_at,
+                  r.name                   AS room,
+                  s.assignee               AS assignee_id,
+                  u.username               AS username,
+                  s.checkin                AS checkin,
+                  s.checkout               AS checkout
+                FROM spares s
+                JOIN rooms r   ON s.room_id  = r.id
+                JOIN users u   ON s.assignee = u.id
+                WHERE s.assignee IS NOT NULL
+                ORDER BY s.id
+                "#,
+            )
+            .bind(auth.id as i64)
+            .fetch_all(&self.database_pool)
+            .await
+            .unwrap(),
         }
         .into_iter()
         .map(|row: SpareRow| Spare {
@@ -521,6 +545,60 @@ mod test {
         };
 
         let list = app.spare_list(SpareListRequest::User, auth).await;
+
+        assert_eq!(list.rooms, vec![String::from("room1")]);
+        assert_eq!(
+            list.spares,
+            vec![
+                Spare {
+                    id: 2,
+                    stamp: 0,
+                    week: String::from("2000-W19"),
+                    begin_time: String::from("P0Y0M0DT8H0M0S"),
+                    end_time: String::from("P0Y0M0DT10H0M0S"),
+                    room: String::from("room1"),
+                    assignee: Some(User {
+                        id: 1,
+                        username: String::from("testuser"),
+                    }),
+                    checkin: None,
+                    checkout: None,
+                },
+                Spare {
+                    id: 4,
+                    stamp: 0,
+                    week: String::from("2000-W20"),
+                    begin_time: String::from("P0Y0M0DT8H0M0S"),
+                    end_time: String::from("P0Y0M0DT10H0M0S"),
+                    room: String::from("room1"),
+                    assignee: Some(User {
+                        id: 1,
+                        username: String::from("testuser"),
+                    }),
+                    checkin: Some(0),
+                    checkout: None,
+                }
+            ]
+        );
+    }
+
+    
+    #[sqlx::test(fixtures("users", "spares"))]
+    async fn test_spare_list_assigned(pool: SqlitePool) {
+        let app = TestApp::new(pool);
+
+        let auth = match app
+            .login(LoginRequest {
+                username: String::from("testuser"),
+                password: String::from("password123"),
+            })
+            .await
+        {
+            LoginResponse::Success(auth) => auth,
+            _ => panic!("login failed"),
+        };
+
+        let list = app.spare_list(SpareListRequest::Assigned, auth).await;
 
         assert_eq!(list.rooms, vec![String::from("room1")]);
         assert_eq!(

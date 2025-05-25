@@ -239,7 +239,7 @@ pub struct Spare {
 pub struct Distribution {
     user: Vec<User>,
     spare: Vec<Spare>,
-    mf: Mcmf,
+    mf: Mcmf, // 最大流最小费用算法
 }
 
 impl Distribution {
@@ -334,6 +334,7 @@ impl Distribution {
     }
 }
 
+// 分配琴房到用户空闲时间
 fn distribute(users: Vec<User>, spares: Vec<Spare>) -> Vec<User> {
     let mut sol = Distribution::new();
     sol.init(&users, &spares, spares.len())
