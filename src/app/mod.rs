@@ -12,7 +12,7 @@ use axum::{extract::State, response::Response, routing::post, Json, Router};
 use checkin::CheckinAPI;
 use chrono::{DateTime, TimeDelta, Utc};
 use hash::Hasher;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use sign::Signer;
 use spare::SpareAPI;
 use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool};
@@ -20,14 +20,6 @@ use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use user::UserAPI;
 
 use crate::config::Config;
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-enum CheckinStatus {
-    None,
-    CheckedIn,
-    CheckedInButLate(i64),
-    CheckedOut,
-}
 
 fn parse_week(week: String) -> DateTime<Utc> {
     DateTime::parse_from_str((week + "-1 00:00:00 +0800").as_str(), "%G-W%V-%u %T %z")

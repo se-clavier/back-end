@@ -1,4 +1,4 @@
-use super::{algorithm::max_flow, parse_time_delta, AppState, CheckinStatus};
+use super::{algorithm::max_flow, parse_time_delta, AppState};
 use api::{
     Auth, Room, Spare, SpareAutoAssignRequest, SpareAutoAssignResponse, SpareInitRequest,
     SpareInitResponse, SpareListRequest, SpareListResponse, SpareQuestionaireRequest,
@@ -146,6 +146,8 @@ impl SpareAPI for AppState {
             room: String,
             assignee_id: Option<u64>,
             username: Option<String>,
+            checkin: Option<i64>,
+            checkout: Option<i64>,
         }
         let spares = match req {
             SpareListRequest::Schedule => query_as(
@@ -158,7 +160,9 @@ impl SpareAPI for AppState {
                       s.end_at                 AS end_at,
                       r.name                   AS room,
                       a.user_id                AS assignee_id,
-                      u.username               AS username
+                      u.username               AS username,
+                      s.checkin                AS checkin,
+                      s.checkout               AS checkout
                     FROM spares s
                     JOIN rooms r   ON s.room_id  = r.id
                     LEFT JOIN availables a ON s.stamp = a.stamp AND a.user_id = ?
@@ -182,7 +186,9 @@ impl SpareAPI for AppState {
                   s.end_at                 AS end_at,
                   r.name                   AS room,
                   s.assignee               AS assignee_id,
-                  u.username               AS username
+                  u.username               AS username,
+                  s.checkin                AS checkin,
+                  s.checkout               AS checkout
                 FROM spares s
                 JOIN rooms r   ON s.room_id  = r.id
                 LEFT JOIN users u ON s.assignee = u.id
@@ -191,6 +197,30 @@ impl SpareAPI for AppState {
                 "#,
             )
             .bind(&week_str)
+            .fetch_all(&self.database_pool)
+            .await
+            .unwrap(),
+            SpareListRequest::User => query_as(
+                r#"
+                SELECT
+                  s.id                     AS id,
+                  s.stamp                  AS stamp,
+                  s.week                   AS week,
+                  s.begin_at               AS begin_at,
+                  s.end_at                 AS end_at,
+                  r.name                   AS room,
+                  s.assignee               AS assignee_id,
+                  u.username               AS username,
+                  s.checkin                AS checkin,
+                  s.checkout               AS checkout
+                FROM spares s
+                JOIN rooms r   ON s.room_id  = r.id
+                LEFT JOIN users u ON s.assignee = u.id
+                WHERE s.assignee = ?
+                ORDER BY s.id
+                "#,
+            )
+            .bind(auth.id as i64)
             .fetch_all(&self.database_pool)
             .await
             .unwrap(),
@@ -206,6 +236,8 @@ impl SpareAPI for AppState {
             assignee: row
                 .assignee_id
                 .and_then(|id| row.username.map(|username| User { id, username })),
+            checkin: row.checkin,
+            checkout: row.checkout,
         })
         .collect();
 
@@ -238,7 +270,7 @@ impl SpareAPI for AppState {
         tx.execute(rooms_query).await.unwrap();
 
         let mut spares_qb = QueryBuilder::new(
-            "INSERT INTO spares (room_id, stamp, begin_at, end_at, week, assignee, status)",
+            "INSERT INTO spares (room_id, stamp, begin_at, end_at, week, assignee)",
         );
 
         spares_qb.push_values(
@@ -275,8 +307,7 @@ impl SpareAPI for AppState {
                     .push_bind(begin_time)
                     .push_bind(end_time)
                     .push_bind(week)
-                    .push_bind(assignee)
-                    .push_bind(Json(CheckinStatus::None));
+                    .push_bind(assignee);
             },
         );
         let spares_query = spares_qb.build();
@@ -467,8 +498,63 @@ mod test {
                 begin_time: String::from("P0Y0M0DT8H0M0S"),
                 end_time: String::from("P0Y0M0DT10H0M0S"),
                 room: String::from("room1"),
-                assignee: None
+                assignee: None,
+                checkin: None,
+                checkout: None,
             }]
+        );
+    }
+
+    #[sqlx::test(fixtures("users", "spares"))]
+    async fn test_spare_list_user(pool: SqlitePool) {
+        let app = TestApp::new(pool);
+
+        let auth = match app
+            .login(LoginRequest {
+                username: String::from("testuser"),
+                password: String::from("password123"),
+            })
+            .await
+        {
+            LoginResponse::Success(auth) => auth,
+            _ => panic!("login failed"),
+        };
+
+        let list = app.spare_list(SpareListRequest::User, auth).await;
+
+        assert_eq!(list.rooms, vec![String::from("room1")]);
+        assert_eq!(
+            list.spares,
+            vec![
+                Spare {
+                    id: 2,
+                    stamp: 0,
+                    week: String::from("2000-W19"),
+                    begin_time: String::from("P0Y0M0DT8H0M0S"),
+                    end_time: String::from("P0Y0M0DT10H0M0S"),
+                    room: String::from("room1"),
+                    assignee: Some(User {
+                        id: 1,
+                        username: String::from("testuser"),
+                    }),
+                    checkin: None,
+                    checkout: None,
+                },
+                Spare {
+                    id: 4,
+                    stamp: 0,
+                    week: String::from("2000-W20"),
+                    begin_time: String::from("P0Y0M0DT8H0M0S"),
+                    end_time: String::from("P0Y0M0DT10H0M0S"),
+                    room: String::from("room1"),
+                    assignee: Some(User {
+                        id: 1,
+                        username: String::from("testuser"),
+                    }),
+                    checkin: Some(0),
+                    checkout: None,
+                }
+            ]
         );
     }
 
@@ -503,7 +589,9 @@ mod test {
                     assignee: Some(User {
                         id: 1,
                         username: String::from("testuser"),
-                    })
+                    }),
+                    checkin: None,
+                    checkout: None,
                 },
                 Spare {
                     id: 5,
@@ -515,7 +603,9 @@ mod test {
                     assignee: Some(User {
                         id: 1,
                         username: String::from("testuser"),
-                    })
+                    }),
+                    checkin: None,
+                    checkout: None,
                 },
             ]
         );
@@ -544,6 +634,8 @@ mod test {
                 end_time: String::from("test_end1"),
                 room: String::from("test_room1"),
                 assignee: None,
+                checkin: None,
+                checkout: None,
             },
             Spare {
                 id: 4,
@@ -553,6 +645,8 @@ mod test {
                 end_time: String::from("test_end2"),
                 room: String::from("test_room1"),
                 assignee: None,
+                checkin: None,
+                checkout: None,
             },
         ];
 
@@ -650,6 +744,8 @@ mod test {
                         id: 2,
                         username: String::from("testadmin"),
                     }),
+                    checkin: None,
+                    checkout: None,
                 },
                 Spare {
                     id: 7,
@@ -662,6 +758,8 @@ mod test {
                         id: 1,
                         username: String::from("testuser"),
                     }),
+                    checkin: None,
+                    checkout: None,
                 },
             ]
         );
