@@ -3,9 +3,8 @@ use api::{
     TerminalCredentialRequest, TerminalCredentialResponse,
 };
 use chrono::{TimeDelta, Utc};
-use sqlx::types::Json;
 
-use crate::app::{parse_time_delta, parse_week, AppState, CheckinStatus};
+use crate::app::{parse_time_delta, parse_week, AppState};
 
 pub trait CheckinAPI {
     async fn terminal_credential(
@@ -26,41 +25,37 @@ impl CheckinAPI for AppState {
             }
         }
         let mut tx = self.database_pool.begin().await.unwrap();
-        let (status, begin_at, week): (Json<CheckinStatus>, String, String) = sqlx::query_as(
-            "SELECT status, begin_at, week from spares WHERE id = ? AND assignee = ?",
+        let (checkin, begin_at, week): (Option<i64>, String, String) = sqlx::query_as(
+            "SELECT checkin, begin_at, week from spares WHERE id = ? AND assignee = ?",
         )
         .bind(req.id as i64)
         .bind(auth.id as i64)
         .fetch_one(&mut *tx)
         .await
         .unwrap();
-        let res = match status.0 {
-            CheckinStatus::None => {
-                let begin_at = parse_week(week) + parse_time_delta(begin_at);
-                let now = chrono::Utc::now();
-                if now + TimeDelta::minutes(30) < begin_at {
-                    CheckinResponse::Early
-                } else if now > begin_at {
-                    let late = (now - begin_at).num_minutes();
-                    sqlx::query("UPDATE spares SET status = ? WHERE id = ?")
-                        .bind(Json(CheckinStatus::CheckedInButLate(late)))
-                        .bind(req.id as i64)
-                        .execute(&mut *tx)
-                        .await
-                        .unwrap();
+        let res = if checkin.is_none() {
+            let begin_at = parse_week(week) + parse_time_delta(begin_at);
+            let now = chrono::Utc::now();
+            if now + TimeDelta::minutes(30) < begin_at {
+                CheckinResponse::Early
+            } else {
+                let late = (now - begin_at).num_minutes();
+                sqlx::query("UPDATE spares SET checkin = ? WHERE id = ?")
+                    .bind(late)
+                    .bind(req.id as i64)
+                    .execute(&mut *tx)
+                    .await
+                    .unwrap();
+                if late > 0 {
                     CheckinResponse::Late(late)
                 } else {
-                    sqlx::query("UPDATE spares SET status = ? WHERE id = ?")
-                        .bind(Json(CheckinStatus::CheckedIn))
-                        .bind(req.id as i64)
-                        .execute(&mut *tx)
-                        .await
-                        .unwrap();
                     CheckinResponse::Intime
                 }
             }
-            _ => CheckinResponse::Duplicate,
+        } else {
+            CheckinResponse::Duplicate
         };
+
         tx.commit().await.unwrap();
         res
     }
@@ -73,34 +68,38 @@ impl CheckinAPI for AppState {
             }
         }
         let mut tx = self.database_pool.begin().await.unwrap();
-        let (status, end_at, week): (Json<CheckinStatus>, String, String) =
-            sqlx::query_as("SELECT status, end_at, week from spares WHERE id = ? AND assignee = ?")
-                .bind(req.id as i64)
-                .bind(auth.id as i64)
-                .fetch_one(&mut *tx)
-                .await
-                .unwrap();
-        let res = match status.0 {
-            CheckinStatus::CheckedOut => CheckoutResponse::Duplicate,
-            CheckinStatus::None => CheckoutResponse::NotCheckedIn,
-            _ => {
-                let end_at = parse_week(week) + parse_time_delta(end_at);
-                let now = chrono::Utc::now();
-                if now + TimeDelta::minutes(30) < end_at {
-                    CheckoutResponse::Early
-                } else if now > end_at {
-                    CheckoutResponse::Late
-                } else {
-                    sqlx::query("UPDATE spares SET status = ? WHERE id = ?")
-                        .bind(Json(CheckinStatus::CheckedOut))
-                        .bind(req.id as i64)
-                        .execute(&mut *tx)
-                        .await
-                        .unwrap();
-                    CheckoutResponse::Intime
-                }
+        let (checkin, checkout, end_at, week): (Option<i64>, Option<i64>, String, String) =
+            sqlx::query_as(
+                "SELECT checkin, checkout, end_at, week from spares WHERE id = ? AND assignee = ?",
+            )
+            .bind(req.id as i64)
+            .bind(auth.id as i64)
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+        let res = if checkin.is_none() {
+            CheckoutResponse::NotCheckedIn
+        } else if checkout.is_none() {
+            let end_at = parse_week(week) + parse_time_delta(end_at);
+            let now = chrono::Utc::now();
+            if now + TimeDelta::minutes(30) < end_at {
+                CheckoutResponse::Early
+            } else if now > end_at + TimeDelta::minutes(30) {
+                CheckoutResponse::Late
+            } else {
+                let early = (end_at - now).num_minutes();
+                sqlx::query("UPDATE spares SET checkout = ? WHERE id = ?")
+                    .bind(early)
+                    .bind(req.id as i64)
+                    .execute(&mut *tx)
+                    .await
+                    .unwrap();
+                CheckoutResponse::Intime
             }
+        } else {
+            CheckoutResponse::Duplicate
         };
+
         tx.commit().await.unwrap();
         res
     }
